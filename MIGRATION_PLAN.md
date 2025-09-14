@@ -1,7 +1,7 @@
 # GitUp to Rust Migration Plan
 
 ## 📊 Current Status
-- **Progress**: Phase 2 - Incremental UI Migration (25% complete)
+- **Progress**: Phase 2 - Incremental UI Migration (30% complete)
 - **Last Updated**: 2025-09-14
 - **Status**: 🟢 Active Development
 
@@ -17,7 +17,7 @@
 - ✅ Commit operations (stage, commit, amend)
 
 #### Phase 2: UI Migration 🚧
-- ✅ **Terminal UI (ratatui)** (NEW)
+- ✅ **Terminal UI (ratatui)** (NEW - Enhanced)
   - Interactive 4-tab interface
   - Commit history browser
   - Branch management
@@ -25,6 +25,11 @@
   - Diff viewer with syntax highlighting
   - Keyboard navigation
   - Real-time updates
+  - **Improved scroll functionality** (NEW)
+    - Proper line count tracking
+    - Multiple scroll methods (arrows, j/k, Page Up/Down, Home/End)
+    - Scrollbar with position indicator
+    - Current position display in title bar
 
 ### Next Steps
 1. Implement merge and rebase operations
