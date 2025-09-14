@@ -122,32 +122,32 @@ enum Commands {
     },
     /// Fetch from remote
     Fetch {
-        /// Path to the repository
-        #[arg(default_value = ".")]
-        path: PathBuf,
         /// Remote name
         #[arg(default_value = "origin")]
         remote: String,
+        /// Path to the repository
+        #[arg(short = 'p', long, default_value = ".")]
+        path: PathBuf,
     },
     /// Pull from remote
     Pull {
-        /// Path to the repository
-        #[arg(default_value = ".")]
-        path: PathBuf,
         /// Remote name
         #[arg(default_value = "origin")]
         remote: String,
         /// Branch name (defaults to current branch)
         branch: Option<String>,
+        /// Path to the repository
+        #[arg(short = 'p', long, default_value = ".")]
+        path: PathBuf,
     },
     /// Push to remote
     Push {
-        /// Path to the repository
-        #[arg(default_value = ".")]
-        path: PathBuf,
         /// Remote name
         #[arg(default_value = "origin")]
         remote: String,
+        /// Path to the repository
+        #[arg(short = 'p', long, default_value = ".")]
+        path: PathBuf,
         /// Set upstream
         #[arg(short = 'u', long)]
         set_upstream: bool,
@@ -377,13 +377,13 @@ fn main() -> Result<()> {
                 }
             }
         }
-        Commands::Fetch { path, remote } => {
+        Commands::Fetch { remote, path } => {
             let repo = Repository::open(&path)?;
             println!("Fetching from {}...", remote);
             let result = repo.fetch(&remote)?;
             println!("{}", result);
         }
-        Commands::Pull { path, remote, branch } => {
+        Commands::Pull { remote, branch, path } => {
             let repo = Repository::open(&path)?;
 
             // Get current branch if not specified
@@ -402,8 +402,12 @@ fn main() -> Result<()> {
             let result = repo.pull(&remote, &branch_name)?;
             println!("{}", result);
         }
-        Commands::Push { path, remote, set_upstream } => {
+        Commands::Push { remote, path, set_upstream } => {
             let repo = Repository::open(&path)?;
+
+            println!("Pushing to {}...", remote);
+            let result = repo.push(&remote)?;
+            println!("{}", result);
 
             if set_upstream {
                 // Get current branch name
@@ -413,13 +417,12 @@ fn main() -> Result<()> {
                     .map(|b| b.name.clone())
                     .ok_or_else(|| anyhow::anyhow!("No current branch"))?;
 
-                repo.set_upstream(&remote, &current_branch)?;
-                println!("Set upstream to {}/{}", remote, current_branch);
+                // Try to set upstream after push
+                match repo.set_upstream(&remote, &current_branch) {
+                    Ok(_) => println!("Branch '{}' set to track '{}/{}'", current_branch, remote, current_branch),
+                    Err(e) => eprintln!("Note: Could not set upstream: {}", e),
+                }
             }
-
-            println!("Pushing to {}...", remote);
-            let result = repo.push(&remote)?;
-            println!("{}", result);
         }
     }
 

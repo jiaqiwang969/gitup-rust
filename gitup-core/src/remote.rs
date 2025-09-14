@@ -113,14 +113,39 @@ impl<'a> RemoteOps<'a> {
 
         // Set up authentication
         callbacks.credentials(|_url, username_from_url, _allowed_types| {
-            // Try SSH key first
+            // Try different SSH key types
             if let Ok(home) = std::env::var("HOME") {
-                let ssh_key = Path::new(&home).join(".ssh").join("id_rsa");
-                if ssh_key.exists() {
+                let ssh_dir = Path::new(&home).join(".ssh");
+
+                // Try ed25519 key first (modern and secure)
+                let ed25519_key = ssh_dir.join("id_ed25519");
+                if ed25519_key.exists() {
                     return Cred::ssh_key(
                         username_from_url.unwrap_or("git"),
                         None,
-                        &ssh_key,
+                        &ed25519_key,
+                        None,
+                    );
+                }
+
+                // Try RSA key
+                let rsa_key = ssh_dir.join("id_rsa");
+                if rsa_key.exists() {
+                    return Cred::ssh_key(
+                        username_from_url.unwrap_or("git"),
+                        None,
+                        &rsa_key,
+                        None,
+                    );
+                }
+
+                // Try ECDSA key
+                let ecdsa_key = ssh_dir.join("id_ecdsa");
+                if ecdsa_key.exists() {
+                    return Cred::ssh_key(
+                        username_from_url.unwrap_or("git"),
+                        None,
+                        &ecdsa_key,
                         None,
                     );
                 }
@@ -226,14 +251,39 @@ impl<'a> RemoteOps<'a> {
 
         // Set up authentication
         callbacks.credentials(|_url, username_from_url, _allowed_types| {
-            // Try SSH key first
+            // Try different SSH key types
             if let Ok(home) = std::env::var("HOME") {
-                let ssh_key = Path::new(&home).join(".ssh").join("id_rsa");
-                if ssh_key.exists() {
+                let ssh_dir = Path::new(&home).join(".ssh");
+
+                // Try ed25519 key first (modern and secure)
+                let ed25519_key = ssh_dir.join("id_ed25519");
+                if ed25519_key.exists() {
                     return Cred::ssh_key(
                         username_from_url.unwrap_or("git"),
                         None,
-                        &ssh_key,
+                        &ed25519_key,
+                        None,
+                    );
+                }
+
+                // Try RSA key
+                let rsa_key = ssh_dir.join("id_rsa");
+                if rsa_key.exists() {
+                    return Cred::ssh_key(
+                        username_from_url.unwrap_or("git"),
+                        None,
+                        &rsa_key,
+                        None,
+                    );
+                }
+
+                // Try ECDSA key
+                let ecdsa_key = ssh_dir.join("id_ecdsa");
+                if ecdsa_key.exists() {
+                    return Cred::ssh_key(
+                        username_from_url.unwrap_or("git"),
+                        None,
+                        &ecdsa_key,
                         None,
                     );
                 }
