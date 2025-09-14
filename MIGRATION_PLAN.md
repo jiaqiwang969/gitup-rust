@@ -1,7 +1,7 @@
 # GitUp to Rust Migration Plan
 
 ## 📊 Current Status
-- **Progress**: Phase 2 - Incremental UI Migration (30% complete)
+- **Progress**: Phase 2 - Terminal UI Development (60% complete)
 - **Last Updated**: 2025-09-14
 - **Status**: 🟢 Active Development
 
@@ -9,33 +9,124 @@
 #### Phase 1: Core Git Operations ✅
 - ✅ Basic repository operations (open, init, status)
 - ✅ Branch listing and management
+- ✅ Branch creation and checkout
 - ✅ Commit history retrieval
 - ✅ CLI tool with basic commands
 - ✅ FFI bridge foundation
 - ✅ Project structure and build system
-- ✅ Diff operations (all types)
-- ✅ Commit operations (stage, commit, amend)
+- ✅ Diff operations (workdir, staged, commit, between commits)
+- ✅ Commit operations (stage, unstage, commit, amend)
+- ✅ File status tracking
 
-#### Phase 2: UI Migration 🚧
-- ✅ **Terminal UI (ratatui)** (NEW - Enhanced)
-  - Interactive 4-tab interface
-  - Commit history browser
-  - Branch management
-  - Working directory status
-  - Diff viewer with syntax highlighting
-  - Keyboard navigation
-  - Real-time updates
-  - **Improved scroll functionality** (NEW)
+#### Phase 2: Terminal UI ✅ (Completed)
+- ✅ **Terminal UI (ratatui)** - Fully Functional
+  - Interactive 4-tab interface (Commits, Branches, Status, Diff)
+  - Commit history browser with details
+  - Branch management with checkout support
+  - Working directory status with stage/unstage
+  - Diff viewer with enhanced scroll functionality
+  - Keyboard navigation (Tab, arrows, j/k, Enter, etc.)
+  - Real-time updates and refresh
+  - **Improved scroll functionality**
     - Proper line count tracking
     - Multiple scroll methods (arrows, j/k, Page Up/Down, Home/End)
     - Scrollbar with position indicator
     - Current position display in title bar
 
-### Next Steps
-1. Implement merge and rebase operations
-2. Add tag and stash management
-3. Build Objective-C wrapper classes
-4. Create native macOS UI integration
+### 🔍 Analysis of Implemented Core Features
+
+#### ✅ Fully Implemented:
+1. **Repository Management**
+   - `open()` - Open existing repository
+   - `init()` - Initialize new repository
+   - `is_clean()` - Check repository status
+   - `get_status()` - Get file status list
+
+2. **Commit Operations**
+   - `get_commits()` - Retrieve commit history
+   - `commit()` - Create new commits
+   - `amend_commit()` - Amend last commit
+   - `has_staged_changes()` - Check for staged changes
+
+3. **Branch Operations**
+   - `list_branches()` - List all branches
+   - `create_branch()` - Create new branch
+   - `checkout_branch()` - Switch branches
+
+4. **Diff Operations**
+   - `diff_workdir_to_index()` - Working directory changes
+   - `diff_index_to_head()` - Staged changes
+   - `diff_for_commit()` - Single commit diff
+   - `diff_between_commits()` - Compare commits
+   - `diff_stats()` - Diff statistics
+
+5. **Staging Operations**
+   - `stage_file()` - Stage single file
+   - `stage_all()` - Stage all changes
+   - `unstage_file()` - Unstage single file
+   - `reset_index()` - Reset all staged changes
+
+#### ❌ Not Yet Implemented (Core Git Features):
+1. **Merge Operations**
+   - Fast-forward merge
+   - Three-way merge
+   - Merge conflict detection
+   - Conflict resolution
+
+2. **Rebase Operations**
+   - Interactive rebase
+   - Regular rebase
+   - Rebase abort/continue
+
+3. **Remote Operations**
+   - `fetch()` - Fetch from remote
+   - `pull()` - Pull changes
+   - `push()` - Push changes
+   - Remote management (add/remove/list)
+
+4. **Stash Operations**
+   - `stash_save()` - Save working directory
+   - `stash_pop()` - Apply and remove stash
+   - `stash_list()` - List all stashes
+   - `stash_apply()` - Apply without removing
+
+5. **Tag Operations**
+   - `create_tag()` - Create new tag
+   - `list_tags()` - List all tags
+   - `delete_tag()` - Remove tag
+
+6. **Cherry-pick Operations**
+   - `cherry_pick()` - Apply specific commit
+
+7. **Advanced Features**
+   - File history tracking
+   - Blame functionality
+   - Log with graph visualization
+   - Search in commits/diffs
+   - Submodule support
+
+### Next Steps (Priority Order)
+1. **Remote Operations** (Critical for real-world usage)
+   - Implement fetch, pull, push
+   - Add remote management
+   - TUI integration for remote operations
+
+2. **Stash Management** (Common workflow feature)
+   - Implement stash save/pop/list
+   - Add TUI stash tab or modal
+
+3. **Merge Operations** (Essential Git feature)
+   - Implement merge functionality
+   - Add conflict detection
+   - Create conflict resolution UI
+
+4. **Tag Management** (Version control)
+   - Implement tag creation/listing
+   - Add TUI tag management
+
+5. **Rebase Operations** (Advanced workflow)
+   - Implement basic rebase
+   - Add interactive rebase UI
 
 ## Overview
 This document outlines the phased migration strategy for porting GitUp from Objective-C to Rust.
@@ -113,28 +204,30 @@ Replace GitUpKit/Core with Rust implementation while keeping Objective-C UI.
    - [ ] Replace Core folder calls with Rust FFI calls
    - [ ] Maintain API compatibility
 
-### Phase 2: Incremental UI Migration 🚧 In Progress (25% complete)
-Start replacing UI components with Rust alternatives.
+### Phase 2: Terminal UI Development 🚧 In Progress (60% complete)
+Focus on creating a fully-featured Terminal UI as the primary interface.
 
 #### Tasks:
-1. **Terminal UI (Quick Win)** ✅
+1. **Terminal UI Core Features** ✅
    - [x] Create CLI version using ratatui
    - [x] Implement basic navigation
    - [x] Add commit/branch visualization
-   - [x] Add diff viewer
+   - [x] Add diff viewer with scroll support
    - [x] Keyboard shortcuts and commands
+   - [x] Stage/unstage functionality
+   - [x] Branch checkout support
 
-2. **Web-based UI (Tauri)**
-   - [ ] Setup Tauri project
-   - [ ] Create main window structure
-   - [ ] Implement repository view
-   - [ ] Add diff viewer
-   - [ ] Create commit interface
-
-3. **Native macOS Widgets**
-   - [ ] Use objc crate for native integration
-   - [ ] Create custom views in Rust
-   - [ ] Integrate with existing Objective-C UI
+2. **Terminal UI Advanced Features** 🚧
+   - [ ] Merge operations
+   - [ ] Rebase functionality
+   - [ ] Cherry-pick support
+   - [ ] Stash management
+   - [ ] Tag management
+   - [ ] Remote operations (fetch/pull/push)
+   - [ ] Search functionality in commits/diff
+   - [ ] File history viewer
+   - [ ] Conflict resolution interface
+   - [ ] Interactive rebase UI
 
 ### Phase 3: Complete Migration (Weeks 5-6)
 Full replacement of Objective-C code with Rust.
