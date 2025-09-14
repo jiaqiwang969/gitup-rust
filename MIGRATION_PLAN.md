@@ -1,35 +1,36 @@
 # GitUp to Rust Migration Plan
 
 ## 📊 Current Status
-- **Progress**: Phase 1 - Core Git Operations (60% complete)
+- **Progress**: Phase 2 - Incremental UI Migration (25% complete)
 - **Last Updated**: 2025-09-14
 - **Status**: 🟢 Active Development
 
 ### Completed Features
+#### Phase 1: Core Git Operations ✅
 - ✅ Basic repository operations (open, init, status)
 - ✅ Branch listing and management
 - ✅ Commit history retrieval
 - ✅ CLI tool with basic commands
 - ✅ FFI bridge foundation
 - ✅ Project structure and build system
-- ✅ **Diff operations**
-  - Working directory to index diff
-  - Index to HEAD diff
-  - Commit-specific diff
-  - Diff between commits
-  - Diff statistics
-- ✅ **Commit operations** (NEW)
-  - Stage/unstage files
-  - Create commits
-  - Amend commits
-  - File status tracking
-  - Cherry-pick and revert support
+- ✅ Diff operations (all types)
+- ✅ Commit operations (stage, commit, amend)
+
+#### Phase 2: UI Migration 🚧
+- ✅ **Terminal UI (ratatui)** (NEW)
+  - Interactive 4-tab interface
+  - Commit history browser
+  - Branch management
+  - Working directory status
+  - Diff viewer with syntax highlighting
+  - Keyboard navigation
+  - Real-time updates
 
 ### Next Steps
-1. Create terminal UI with ratatui
-2. Implement merge and rebase operations
+1. Implement merge and rebase operations
+2. Add tag and stash management
 3. Build Objective-C wrapper classes
-4. Add tag and stash management
+4. Create native macOS UI integration
 
 ## Overview
 This document outlines the phased migration strategy for porting GitUp from Objective-C to Rust.
@@ -107,14 +108,16 @@ Replace GitUpKit/Core with Rust implementation while keeping Objective-C UI.
    - [ ] Replace Core folder calls with Rust FFI calls
    - [ ] Maintain API compatibility
 
-### Phase 2: Incremental UI Migration (Weeks 3-4)
+### Phase 2: Incremental UI Migration 🚧 In Progress (25% complete)
 Start replacing UI components with Rust alternatives.
 
 #### Tasks:
-1. **Terminal UI (Quick Win)**
-   - [ ] Create CLI version using ratatui
-   - [ ] Implement basic navigation
-   - [ ] Add commit/branch visualization
+1. **Terminal UI (Quick Win)** ✅
+   - [x] Create CLI version using ratatui
+   - [x] Implement basic navigation
+   - [x] Add commit/branch visualization
+   - [x] Add diff viewer
+   - [x] Keyboard shortcuts and commands
 
 2. **Web-based UI (Tauri)**
    - [ ] Setup Tauri project
