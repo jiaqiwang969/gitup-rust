@@ -1,7 +1,7 @@
 # GitUp to Rust Migration Plan
 
 ## 📊 Current Status
-- **Progress**: Phase 1 - Core Git Operations (45% complete)
+- **Progress**: Phase 1 - Core Git Operations (60% complete)
 - **Last Updated**: 2025-09-14
 - **Status**: 🟢 Active Development
 
@@ -12,18 +12,24 @@
 - ✅ CLI tool with basic commands
 - ✅ FFI bridge foundation
 - ✅ Project structure and build system
-- ✅ **Diff operations** (NEW)
+- ✅ **Diff operations**
   - Working directory to index diff
   - Index to HEAD diff
   - Commit-specific diff
   - Diff between commits
   - Diff statistics
+- ✅ **Commit operations** (NEW)
+  - Stage/unstage files
+  - Create commits
+  - Amend commits
+  - File status tracking
+  - Cherry-pick and revert support
 
 ### Next Steps
-1. Implement commit creation functionality
-2. Add staging/unstaging operations
-3. Create terminal UI with ratatui
-4. Build Objective-C wrapper classes
+1. Create terminal UI with ratatui
+2. Implement merge and rebase operations
+3. Build Objective-C wrapper classes
+4. Add tag and stash management
 
 ## Overview
 This document outlines the phased migration strategy for porting GitUp from Objective-C to Rust.
@@ -80,12 +86,12 @@ Replace GitUpKit/Core with Rust implementation while keeping Objective-C UI.
    - [x] Create FFI bindings for repository operations
    - [x] Add repository discovery and validation
 
-2. **Basic Git Operations** 🚧 In Progress
+2. **Basic Git Operations** ✅ Completed
    - [x] List branches
    - [x] Get commit history
    - [x] Diff operations
-   - [ ] Implement commit operations
-   - [ ] Stage/unstage files
+   - [x] Implement commit operations
+   - [x] Stage/unstage files
    - [ ] Create tag handling
    - [ ] Implement stash operations
 
