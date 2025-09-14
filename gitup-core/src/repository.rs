@@ -3,6 +3,7 @@ use git2::Repository as Git2Repository;
 use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use crate::diff::{Diff, FileDiff, DiffStats};
+use crate::commit::{Commit, Status, FileStatus};
 
 pub struct Repository {
     path: PathBuf,
@@ -171,6 +172,54 @@ impl Repository {
     pub fn diff_stats(&self) -> Result<DiffStats> {
         let diffs = self.diff_workdir_to_index()?;
         Ok(DiffStats::from_diffs(&diffs))
+    }
+
+    /// Stage a file
+    pub fn stage_file<P: AsRef<Path>>(&self, path: P) -> Result<()> {
+        let commit = Commit::new(&self.git_repo);
+        commit.stage_file(path)
+    }
+
+    /// Stage all files
+    pub fn stage_all(&self) -> Result<()> {
+        let commit = Commit::new(&self.git_repo);
+        commit.stage_all()
+    }
+
+    /// Unstage a file
+    pub fn unstage_file<P: AsRef<Path>>(&self, path: P) -> Result<()> {
+        let commit = Commit::new(&self.git_repo);
+        commit.unstage_file(path)
+    }
+
+    /// Reset all staged files
+    pub fn reset_index(&self) -> Result<()> {
+        let commit = Commit::new(&self.git_repo);
+        commit.reset_index()
+    }
+
+    /// Create a commit
+    pub fn commit(&self, message: &str, author_name: &str, author_email: &str) -> Result<String> {
+        let commit = Commit::new(&self.git_repo);
+        commit.create(message, author_name, author_email)
+    }
+
+    /// Amend the last commit
+    pub fn amend_commit(&self, message: Option<&str>) -> Result<String> {
+        let commit = Commit::new(&self.git_repo);
+        commit.amend(message)
+    }
+
+    /// Get file statuses
+    pub fn get_status(&self) -> Result<Vec<FileStatus>> {
+        let status = Status::new(&self.git_repo);
+        status.get_all()
+    }
+
+    /// Check if there are staged changes
+    pub fn has_staged_changes(&self) -> Result<bool> {
+        let status = Status::new(&self.git_repo);
+        status.has_staged_changes()
     }
 }
 

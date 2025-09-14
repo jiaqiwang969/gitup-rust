@@ -66,6 +66,46 @@ enum Commands {
         #[arg(long)]
         stat: bool,
     },
+    /// Stage files
+    Stage {
+        /// Path to the repository
+        #[arg(default_value = ".")]
+        path: PathBuf,
+        /// Files to stage (empty for all)
+        files: Vec<String>,
+        /// Stage all files
+        #[arg(short, long)]
+        all: bool,
+    },
+    /// Unstage files
+    Unstage {
+        /// Path to the repository
+        #[arg(default_value = ".")]
+        path: PathBuf,
+        /// Files to unstage (empty for all)
+        files: Vec<String>,
+        /// Unstage all files
+        #[arg(short, long)]
+        all: bool,
+    },
+    /// Create a commit
+    Commit {
+        /// Path to the repository
+        #[arg(default_value = ".")]
+        path: PathBuf,
+        /// Commit message
+        #[arg(short, long)]
+        message: String,
+        /// Author name
+        #[arg(long)]
+        author: Option<String>,
+        /// Author email
+        #[arg(long)]
+        email: Option<String>,
+        /// Amend the last commit
+        #[arg(long)]
+        amend: bool,
+    },
 }
 
 fn main() -> Result<()> {
@@ -170,6 +210,59 @@ fn main() -> Result<()> {
                     println!();
                 }
             }
+        }
+        Commands::Stage { path, files, all } => {
+            let repo = Repository::open(&path)?;
+
+            if all || files.is_empty() {
+                repo.stage_all()?;
+                println!("Staged all changes");
+            } else {
+                for file in files {
+                    repo.stage_file(&file)?;
+                    println!("Staged: {}", file);
+                }
+            }
+        }
+        Commands::Unstage { path, files, all } => {
+            let repo = Repository::open(&path)?;
+
+            if all || files.is_empty() {
+                repo.reset_index()?;
+                println!("Unstaged all changes");
+            } else {
+                for file in files {
+                    repo.unstage_file(&file)?;
+                    println!("Unstaged: {}", file);
+                }
+            }
+        }
+        Commands::Commit { path, message, author, email, amend } => {
+            let repo = Repository::open(&path)?;
+
+            // Check if there are changes to commit
+            if !amend && !repo.has_staged_changes()? {
+                println!("No changes staged for commit");
+                return Ok(());
+            }
+
+            let commit_id = if amend {
+                repo.amend_commit(Some(&message))?
+            } else {
+                // Get author info from git config or use defaults
+                let config = git2::Config::open_default().ok();
+                let author_name = author.or_else(|| {
+                    config.as_ref().and_then(|c| c.get_string("user.name").ok())
+                }).unwrap_or_else(|| "GitUp User".to_string());
+
+                let author_email = email.or_else(|| {
+                    config.as_ref().and_then(|c| c.get_string("user.email").ok())
+                }).unwrap_or_else(|| "gitup@local".to_string());
+
+                repo.commit(&message, &author_name, &author_email)?
+            };
+
+            println!("Created commit: {}", &commit_id[..8]);
         }
     }
 

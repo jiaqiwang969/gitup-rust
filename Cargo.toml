@@ -19,6 +19,9 @@ gitup-ffi = { path = "gitup-ffi" }
 clap = { version = "4.5", features = ["derive"] }
 chrono = "0.4"
 
+# Git
+git2 = "0.19"
+
 # Logging and error handling
 anyhow = "1.0"
 thiserror = "1.0"
