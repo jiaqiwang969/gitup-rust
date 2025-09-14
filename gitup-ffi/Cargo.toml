@@ -1,0 +1,30 @@
+[package]
+name = "gitup-ffi"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "staticlib"]
+
+[dependencies]
+gitup-core = { path = "../gitup-core" }
+
+# FFI bindings
+safer-ffi = { version = "0.1", features = ["proc_macros"] }
+cbindgen = "0.27"
+
+# Objective-C bridge
+objc = "0.2"
+objc-foundation = "0.1"
+block = "0.1"
+
+# Error handling
+anyhow = "1.0"
+thiserror = "1.0"
+
+# Utils
+libc = "0.2"
+once_cell = "1.20"
+
+[build-dependencies]
+cbindgen = "0.27"
