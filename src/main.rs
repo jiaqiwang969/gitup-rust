@@ -106,6 +106,12 @@ enum Commands {
         #[arg(long)]
         amend: bool,
     },
+    /// Launch Terminal UI
+    Tui {
+        /// Path to the repository
+        #[arg(default_value = ".")]
+        path: PathBuf,
+    },
 }
 
 fn main() -> Result<()> {
@@ -263,6 +269,9 @@ fn main() -> Result<()> {
             };
 
             println!("Created commit: {}", &commit_id[..8]);
+        }
+        Commands::Tui { path } => {
+            gitup_ui::run_tui(&path)?;
         }
     }
 
