@@ -5,6 +5,8 @@ use serde::{Deserialize, Serialize};
 use crate::diff::{Diff, FileDiff, DiffStats};
 use crate::commit::{Commit, Status, FileStatus};
 use crate::remote::{RemoteInfo, RemoteOps, TransferProgress};
+use crate::stash::{StashInfo, StashOps};
+use crate::tag::{TagInfo, TagOps};
 
 pub struct Repository {
     path: PathBuf,
@@ -268,6 +270,101 @@ impl Repository {
     /// Set upstream for current branch
     pub fn set_upstream(&self, remote_name: &str, branch_name: &str) -> Result<()> {
         self.remote_ops().set_upstream(remote_name, branch_name)
+    }
+
+    // Stash operations
+
+    /// Save changes to stash
+    pub fn stash_save(&self, message: Option<&str>, include_untracked: bool) -> Result<String> {
+        let mut ops = StashOps::new(&self.path)?;
+        ops.save(message, include_untracked)
+    }
+
+    /// List all stashes
+    pub fn stash_list(&self) -> Result<Vec<StashInfo>> {
+        let mut ops = StashOps::new(&self.path)?;
+        ops.list()
+    }
+
+    /// Apply a stash
+    pub fn stash_apply(&self, index: usize) -> Result<String> {
+        let mut ops = StashOps::new(&self.path)?;
+        ops.apply(index)
+    }
+
+    /// Pop a stash (apply and remove)
+    pub fn stash_pop(&self, index: Option<usize>) -> Result<String> {
+        let index = index.unwrap_or(0);
+        let mut ops = StashOps::new(&self.path)?;
+        ops.pop(index)
+    }
+
+    /// Drop a stash
+    pub fn stash_drop(&self, index: usize) -> Result<String> {
+        let mut ops = StashOps::new(&self.path)?;
+        ops.drop(index)
+    }
+
+    /// Clear all stashes
+    pub fn stash_clear(&self) -> Result<String> {
+        let mut ops = StashOps::new(&self.path)?;
+        ops.clear()
+    }
+
+    /// Show a stash
+    pub fn stash_show(&self, index: usize) -> Result<String> {
+        let mut ops = StashOps::new(&self.path)?;
+        ops.show(index)
+    }
+
+    /// Check if there are any stashes
+    pub fn has_stashes(&self) -> Result<bool> {
+        let mut ops = StashOps::new(&self.path)?;
+        ops.has_stashes()
+    }
+
+    // Tag operations
+
+    /// Create a tag
+    pub fn tag_create(
+        &self,
+        name: &str,
+        target: Option<&str>,
+        message: Option<&str>,
+        force: bool,
+    ) -> Result<String> {
+        let ops = TagOps::new(&self.path)?;
+        ops.create(name, target, message, force)
+    }
+
+    /// List all tags
+    pub fn tag_list(&self, pattern: Option<&str>) -> Result<Vec<TagInfo>> {
+        let ops = TagOps::new(&self.path)?;
+        ops.list(pattern)
+    }
+
+    /// Delete a tag
+    pub fn tag_delete(&self, name: &str) -> Result<String> {
+        let mut ops = TagOps::new(&self.path)?;
+        ops.delete(name)
+    }
+
+    /// Show tag details
+    pub fn tag_show(&self, name: &str) -> Result<String> {
+        let ops = TagOps::new(&self.path)?;
+        ops.show(name)
+    }
+
+    /// Push tags to remote
+    pub fn tag_push(&self, remote_name: &str, tag_name: Option<&str>, force: bool) -> Result<String> {
+        let ops = TagOps::new(&self.path)?;
+        ops.push(remote_name, tag_name, force)
+    }
+
+    /// Check if a tag exists
+    pub fn tag_exists(&self, name: &str) -> Result<bool> {
+        let ops = TagOps::new(&self.path)?;
+        Ok(ops.exists(name))
     }
 }
 

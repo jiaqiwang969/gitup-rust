@@ -152,6 +152,105 @@ enum Commands {
         #[arg(short = 'u', long)]
         set_upstream: bool,
     },
+    /// Manage stashes
+    Stash {
+        /// Path to the repository
+        #[arg(short = 'p', long, default_value = ".")]
+        path: PathBuf,
+        #[command(subcommand)]
+        command: StashCommands,
+    },
+    /// Manage tags
+    Tag {
+        /// Path to the repository
+        #[arg(short = 'p', long, default_value = ".")]
+        path: PathBuf,
+        #[command(subcommand)]
+        command: TagCommands,
+    },
+}
+
+#[derive(Subcommand)]
+enum StashCommands {
+    /// Save changes to stash
+    Save {
+        /// Stash message
+        #[arg(short, long)]
+        message: Option<String>,
+        /// Include untracked files
+        #[arg(short = 'u', long)]
+        include_untracked: bool,
+    },
+    /// List all stashes
+    List,
+    /// Apply a stash
+    Apply {
+        /// Stash index (default: 0)
+        #[arg(default_value = "0")]
+        index: usize,
+    },
+    /// Pop a stash (apply and remove)
+    Pop {
+        /// Stash index (default: 0)
+        index: Option<usize>,
+    },
+    /// Drop a stash
+    Drop {
+        /// Stash index
+        index: usize,
+    },
+    /// Show a stash
+    Show {
+        /// Stash index (default: 0)
+        #[arg(default_value = "0")]
+        index: usize,
+    },
+    /// Clear all stashes
+    Clear,
+}
+
+#[derive(Subcommand)]
+enum TagCommands {
+    /// Create a new tag
+    Create {
+        /// Tag name
+        name: String,
+        /// Target commit (default: HEAD)
+        #[arg(short, long)]
+        target: Option<String>,
+        /// Tag message (creates annotated tag)
+        #[arg(short, long)]
+        message: Option<String>,
+        /// Force create tag even if it exists
+        #[arg(short, long)]
+        force: bool,
+    },
+    /// List tags
+    List {
+        /// Pattern to filter tags
+        pattern: Option<String>,
+    },
+    /// Delete a tag
+    Delete {
+        /// Tag name
+        name: String,
+    },
+    /// Show tag details
+    Show {
+        /// Tag name
+        name: String,
+    },
+    /// Push tags to remote
+    Push {
+        /// Remote name
+        #[arg(default_value = "origin")]
+        remote: String,
+        /// Tag name (push all tags if not specified)
+        tag: Option<String>,
+        /// Force push
+        #[arg(short, long)]
+        force: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -421,6 +520,82 @@ fn main() -> Result<()> {
                 match repo.set_upstream(&remote, &current_branch) {
                     Ok(_) => println!("Branch '{}' set to track '{}/{}'", current_branch, remote, current_branch),
                     Err(e) => eprintln!("Note: Could not set upstream: {}", e),
+                }
+            }
+        }
+        Commands::Stash { path, command } => {
+            let repo = Repository::open(&path)?;
+
+            match command {
+                StashCommands::Save { message, include_untracked } => {
+                    let result = repo.stash_save(message.as_deref(), include_untracked)?;
+                    println!("{}", result);
+                }
+                StashCommands::List => {
+                    let stashes = repo.stash_list()?;
+                    if stashes.is_empty() {
+                        println!("No stashes found");
+                    } else {
+                        for stash in stashes {
+                            println!("stash@{{{}}}: {}", stash.index, stash.message);
+                        }
+                    }
+                }
+                StashCommands::Apply { index } => {
+                    let result = repo.stash_apply(index)?;
+                    println!("{}", result);
+                }
+                StashCommands::Pop { index } => {
+                    let result = repo.stash_pop(index)?;
+                    println!("{}", result);
+                }
+                StashCommands::Drop { index } => {
+                    let result = repo.stash_drop(index)?;
+                    println!("{}", result);
+                }
+                StashCommands::Show { index } => {
+                    let result = repo.stash_show(index)?;
+                    println!("{}", result);
+                }
+                StashCommands::Clear => {
+                    let result = repo.stash_clear()?;
+                    println!("{}", result);
+                }
+            }
+        }
+        Commands::Tag { path, command } => {
+            let repo = Repository::open(&path)?;
+
+            match command {
+                TagCommands::Create { name, target, message, force } => {
+                    let result = repo.tag_create(&name, target.as_deref(), message.as_deref(), force)?;
+                    println!("{}", result);
+                }
+                TagCommands::List { pattern } => {
+                    let tags = repo.tag_list(pattern.as_deref())?;
+                    if tags.is_empty() {
+                        println!("No tags found");
+                    } else {
+                        for tag in tags {
+                            if tag.is_annotated {
+                                println!("{} (annotated)", tag.name);
+                            } else {
+                                println!("{}", tag.name);
+                            }
+                        }
+                    }
+                }
+                TagCommands::Delete { name } => {
+                    let result = repo.tag_delete(&name)?;
+                    println!("{}", result);
+                }
+                TagCommands::Show { name } => {
+                    let result = repo.tag_show(&name)?;
+                    print!("{}", result);
+                }
+                TagCommands::Push { remote, tag, force } => {
+                    let result = repo.tag_push(&remote, tag.as_deref(), force)?;
+                    println!("{}", result);
                 }
             }
         }
