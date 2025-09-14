@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use crate::diff::{Diff, FileDiff, DiffStats};
 use crate::commit::{Commit, Status, FileStatus};
+use crate::remote::{RemoteInfo, RemoteOps, TransferProgress};
 
 pub struct Repository {
     path: PathBuf,
@@ -220,6 +221,53 @@ impl Repository {
     pub fn has_staged_changes(&self) -> Result<bool> {
         let status = Status::new(&self.git_repo);
         status.has_staged_changes()
+    }
+
+    // Remote operations
+
+    /// Get remote operations handler
+    pub fn remote_ops(&self) -> RemoteOps {
+        RemoteOps::new(&self.git_repo)
+    }
+
+    /// List all remotes
+    pub fn list_remotes(&self) -> Result<Vec<RemoteInfo>> {
+        self.remote_ops().list_remotes()
+    }
+
+    /// Add a remote
+    pub fn add_remote(&self, name: &str, url: &str) -> Result<()> {
+        self.remote_ops().add_remote(name, url)
+    }
+
+    /// Remove a remote
+    pub fn remove_remote(&self, name: &str) -> Result<()> {
+        self.remote_ops().remove_remote(name)
+    }
+
+    /// Fetch from remote
+    pub fn fetch(&self, remote_name: &str) -> Result<String> {
+        self.remote_ops().fetch(remote_name, &[], None)
+    }
+
+    /// Pull from remote
+    pub fn pull(&self, remote_name: &str, branch_name: &str) -> Result<String> {
+        self.remote_ops().pull(remote_name, branch_name, None)
+    }
+
+    /// Push to remote
+    pub fn push(&self, remote_name: &str) -> Result<String> {
+        self.remote_ops().push(remote_name, &[], None)
+    }
+
+    /// Get upstream for current branch
+    pub fn get_upstream(&self) -> Result<Option<(String, String)>> {
+        self.remote_ops().get_upstream()
+    }
+
+    /// Set upstream for current branch
+    pub fn set_upstream(&self, remote_name: &str, branch_name: &str) -> Result<()> {
+        self.remote_ops().set_upstream(remote_name, branch_name)
     }
 }
 

@@ -112,6 +112,69 @@ enum Commands {
         #[arg(default_value = ".")]
         path: PathBuf,
     },
+    /// Manage remotes
+    Remote {
+        /// Path to the repository
+        #[arg(default_value = ".")]
+        path: PathBuf,
+        #[command(subcommand)]
+        command: RemoteCommands,
+    },
+    /// Fetch from remote
+    Fetch {
+        /// Path to the repository
+        #[arg(default_value = ".")]
+        path: PathBuf,
+        /// Remote name
+        #[arg(default_value = "origin")]
+        remote: String,
+    },
+    /// Pull from remote
+    Pull {
+        /// Path to the repository
+        #[arg(default_value = ".")]
+        path: PathBuf,
+        /// Remote name
+        #[arg(default_value = "origin")]
+        remote: String,
+        /// Branch name (defaults to current branch)
+        branch: Option<String>,
+    },
+    /// Push to remote
+    Push {
+        /// Path to the repository
+        #[arg(default_value = ".")]
+        path: PathBuf,
+        /// Remote name
+        #[arg(default_value = "origin")]
+        remote: String,
+        /// Set upstream
+        #[arg(short = 'u', long)]
+        set_upstream: bool,
+    },
+}
+
+#[derive(Subcommand)]
+enum RemoteCommands {
+    /// List remotes
+    List,
+    /// Add a remote
+    Add {
+        /// Remote name
+        name: String,
+        /// Remote URL
+        url: String,
+    },
+    /// Remove a remote
+    Remove {
+        /// Remote name
+        name: String,
+    },
+    /// Show remote info
+    Show {
+        /// Remote name
+        name: String,
+    },
 }
 
 fn main() -> Result<()> {
@@ -272,6 +335,91 @@ fn main() -> Result<()> {
         }
         Commands::Tui { path } => {
             gitup_ui::run_tui(&path)?;
+        }
+        Commands::Remote { path, command } => {
+            let repo = Repository::open(&path)?;
+
+            match command {
+                RemoteCommands::List => {
+                    let remotes = repo.list_remotes()?;
+                    if remotes.is_empty() {
+                        println!("No remotes configured");
+                    } else {
+                        for remote in remotes {
+                            println!("{}\t{} (fetch)", remote.name, remote.url);
+                            if let Some(push_url) = remote.push_url {
+                                if push_url != remote.url {
+                                    println!("{}\t{} (push)", remote.name, push_url);
+                                }
+                            }
+                        }
+                    }
+                }
+                RemoteCommands::Add { name, url } => {
+                    repo.add_remote(&name, &url)?;
+                    println!("Added remote {} -> {}", name, url);
+                }
+                RemoteCommands::Remove { name } => {
+                    repo.remove_remote(&name)?;
+                    println!("Removed remote {}", name);
+                }
+                RemoteCommands::Show { name } => {
+                    let remotes = repo.list_remotes()?;
+                    if let Some(remote) = remotes.iter().find(|r| r.name == name) {
+                        println!("* remote {}", remote.name);
+                        println!("  Fetch URL: {}", remote.url);
+                        if let Some(push_url) = &remote.push_url {
+                            println!("  Push URL: {}", push_url);
+                        }
+                    } else {
+                        println!("Remote '{}' not found", name);
+                    }
+                }
+            }
+        }
+        Commands::Fetch { path, remote } => {
+            let repo = Repository::open(&path)?;
+            println!("Fetching from {}...", remote);
+            let result = repo.fetch(&remote)?;
+            println!("{}", result);
+        }
+        Commands::Pull { path, remote, branch } => {
+            let repo = Repository::open(&path)?;
+
+            // Get current branch if not specified
+            let branch_name = if let Some(b) = branch {
+                b
+            } else {
+                // Get current branch name
+                let branches = repo.list_branches()?;
+                branches.iter()
+                    .find(|b| b.is_head && !b.is_remote)
+                    .map(|b| b.name.clone())
+                    .ok_or_else(|| anyhow::anyhow!("No current branch"))?
+            };
+
+            println!("Pulling from {} {}", remote, branch_name);
+            let result = repo.pull(&remote, &branch_name)?;
+            println!("{}", result);
+        }
+        Commands::Push { path, remote, set_upstream } => {
+            let repo = Repository::open(&path)?;
+
+            if set_upstream {
+                // Get current branch name
+                let branches = repo.list_branches()?;
+                let current_branch = branches.iter()
+                    .find(|b| b.is_head && !b.is_remote)
+                    .map(|b| b.name.clone())
+                    .ok_or_else(|| anyhow::anyhow!("No current branch"))?;
+
+                repo.set_upstream(&remote, &current_branch)?;
+                println!("Set upstream to {}/{}", remote, current_branch);
+            }
+
+            println!("Pushing to {}...", remote);
+            let result = repo.push(&remote)?;
+            println!("{}", result);
         }
     }
 
