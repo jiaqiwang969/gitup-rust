@@ -1,7 +1,7 @@
 # GitUp to Rust Migration Plan
 
 ## 📊 Current Status
-- **Progress**: Phase 2 - Terminal UI Development (60% complete)
+- **Progress**: Phase 2 - Terminal UI Development (65% complete)
 - **Last Updated**: 2025-09-14
 - **Status**: 🟢 Active Development
 
@@ -17,6 +17,12 @@
 - ✅ Diff operations (workdir, staged, commit, between commits)
 - ✅ Commit operations (stage, unstage, commit, amend)
 - ✅ File status tracking
+- ✅ **Remote operations** (NEW)
+  - Fetch/Pull/Push functionality
+  - Remote management (add/remove/list)
+  - SSH key and SSH agent authentication
+  - Upstream tracking
+  - Transfer progress callbacks
 
 #### Phase 2: Terminal UI ✅ (Completed)
 - ✅ **Terminal UI (ratatui)** - Fully Functional
@@ -66,6 +72,16 @@
    - `unstage_file()` - Unstage single file
    - `reset_index()` - Reset all staged changes
 
+6. **Remote Operations** ✅ (NEW)
+   - `fetch()` - Fetch from remote
+   - `pull()` - Pull changes (with fast-forward merge)
+   - `push()` - Push changes
+   - `list_remotes()` - List configured remotes
+   - `add_remote()` - Add new remote
+   - `remove_remote()` - Remove remote
+   - `get_upstream()` - Get upstream tracking
+   - `set_upstream()` - Set upstream branch
+
 #### ❌ Not Yet Implemented (Core Git Features):
 1. **Merge Operations**
    - Fast-forward merge
@@ -106,27 +122,27 @@
    - Submodule support
 
 ### Next Steps (Priority Order)
-1. **Remote Operations** (Critical for real-world usage)
-   - Implement fetch, pull, push
-   - Add remote management
-   - TUI integration for remote operations
-
-2. **Stash Management** (Common workflow feature)
+1. **Stash Management** (Common workflow feature)
    - Implement stash save/pop/list
    - Add TUI stash tab or modal
 
-3. **Merge Operations** (Essential Git feature)
+2. **Merge Operations** (Essential Git feature)
    - Implement merge functionality
    - Add conflict detection
    - Create conflict resolution UI
 
-4. **Tag Management** (Version control)
+3. **Tag Management** (Version control)
    - Implement tag creation/listing
    - Add TUI tag management
 
-5. **Rebase Operations** (Advanced workflow)
+4. **Rebase Operations** (Advanced workflow)
    - Implement basic rebase
    - Add interactive rebase UI
+
+5. **TUI Remote Integration**
+   - Add remote operations to TUI
+   - Show sync status in UI
+   - Add fetch/pull/push commands
 
 ## Overview
 This document outlines the phased migration strategy for porting GitUp from Objective-C to Rust.
