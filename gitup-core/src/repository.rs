@@ -8,6 +8,8 @@ use crate::remote::{RemoteInfo, RemoteOps};
 use crate::stash::{StashInfo, StashOps};
 use crate::tag::{TagInfo, TagOps};
 use crate::merge::{MergeOps, MergeResult, ConflictResolution};
+use crate::rebase::{RebaseOps, RebaseResult};
+use crate::cherry_pick::{CherryPickOps, CherryPickResult};
 
 pub struct Repository {
     path: PathBuf,
@@ -404,6 +406,76 @@ impl Repository {
     pub fn merge_resolve_conflict(&self, file_path: &str, resolution: ConflictResolution) -> Result<String> {
         let ops = MergeOps::new(&self.path)?;
         ops.resolve_conflict(file_path, resolution)
+    }
+
+    // Rebase operations
+
+    /// Rebase current branch onto another branch
+    pub fn rebase_onto(&self, target_branch: &str) -> Result<RebaseResult> {
+        let ops = RebaseOps::new(&self.path)?;
+        ops.rebase_onto(target_branch)
+    }
+
+    /// Start an interactive rebase
+    pub fn rebase_interactive(&self, upstream: &str, onto: Option<&str>) -> Result<RebaseResult> {
+        let ops = RebaseOps::new(&self.path)?;
+        ops.start_interactive(upstream, onto)
+    }
+
+    /// Continue an in-progress rebase
+    pub fn rebase_continue(&self) -> Result<RebaseResult> {
+        let mut ops = RebaseOps::new(&self.path)?;
+        ops.continue_rebase()
+    }
+
+    /// Abort an in-progress rebase
+    pub fn rebase_abort(&self) -> Result<String> {
+        let ops = RebaseOps::new(&self.path)?;
+        ops.abort_rebase()
+    }
+
+    /// Skip current commit in rebase
+    pub fn rebase_skip(&self) -> Result<RebaseResult> {
+        let mut ops = RebaseOps::new(&self.path)?;
+        ops.skip_commit()
+    }
+
+    /// Get rebase status
+    pub fn rebase_status(&self) -> Result<String> {
+        let ops = RebaseOps::new(&self.path)?;
+        ops.rebase_status()
+    }
+
+    // Cherry-pick operations
+
+    /// Cherry-pick a single commit
+    pub fn cherry_pick(&self, commit_ref: &str) -> Result<CherryPickResult> {
+        let ops = CherryPickOps::new(&self.path)?;
+        ops.pick_commit(commit_ref)
+    }
+
+    /// Cherry-pick a range of commits
+    pub fn cherry_pick_range(&self, start_ref: &str, end_ref: &str) -> Result<Vec<CherryPickResult>> {
+        let ops = CherryPickOps::new(&self.path)?;
+        ops.pick_range(start_ref, end_ref)
+    }
+
+    /// Continue a cherry-pick after resolving conflicts
+    pub fn cherry_pick_continue(&self) -> Result<CherryPickResult> {
+        let ops = CherryPickOps::new(&self.path)?;
+        ops.continue_pick()
+    }
+
+    /// Abort a cherry-pick in progress
+    pub fn cherry_pick_abort(&self) -> Result<String> {
+        let ops = CherryPickOps::new(&self.path)?;
+        ops.abort_pick()
+    }
+
+    /// Get cherry-pick status
+    pub fn cherry_pick_status(&self) -> Result<String> {
+        let ops = CherryPickOps::new(&self.path)?;
+        ops.pick_status()
     }
 }
 

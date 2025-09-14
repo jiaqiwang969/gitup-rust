@@ -176,6 +176,22 @@ enum Commands {
         #[command(subcommand)]
         command: MergeCommands,
     },
+    /// Rebase branches
+    Rebase {
+        /// Path to the repository
+        #[arg(short = 'p', long, default_value = ".")]
+        path: PathBuf,
+        #[command(subcommand)]
+        command: RebaseCommands,
+    },
+    /// Cherry-pick commits
+    CherryPick {
+        /// Path to the repository
+        #[arg(short = 'p', long, default_value = ".")]
+        path: PathBuf,
+        #[command(subcommand)]
+        command: CherryPickCommands,
+    },
 }
 
 #[derive(Subcommand)]
@@ -298,6 +314,53 @@ enum ResolutionStrategy {
     Ours,
     Theirs,
     Manual,
+}
+
+#[derive(Subcommand)]
+enum RebaseCommands {
+    /// Rebase current branch onto another branch
+    Onto {
+        /// Target branch to rebase onto
+        branch: String,
+    },
+    /// Start an interactive rebase
+    Interactive {
+        /// Upstream reference
+        upstream: String,
+        /// Onto reference (optional)
+        #[arg(long)]
+        onto: Option<String>,
+    },
+    /// Continue an in-progress rebase
+    Continue,
+    /// Abort an in-progress rebase
+    Abort,
+    /// Skip the current commit in rebase
+    Skip,
+    /// Show rebase status
+    Status,
+}
+
+#[derive(Subcommand)]
+enum CherryPickCommands {
+    /// Cherry-pick a single commit
+    Commit {
+        /// Commit reference to cherry-pick
+        commit: String,
+    },
+    /// Cherry-pick a range of commits
+    Range {
+        /// Start commit reference
+        start: String,
+        /// End commit reference
+        end: String,
+    },
+    /// Continue a cherry-pick after resolving conflicts
+    Continue,
+    /// Abort a cherry-pick in progress
+    Abort,
+    /// Show cherry-pick status
+    Status,
 }
 
 #[derive(Subcommand)]
@@ -715,6 +778,152 @@ fn main() -> Result<()> {
                     };
                     let result = repo.merge_resolve_conflict(&file, resolution)?;
                     println!("{}", result);
+                }
+            }
+        }
+        Commands::Rebase { path, command } => {
+            let repo = Repository::open(&path)?;
+
+            match command {
+                RebaseCommands::Onto { branch } => {
+                    println!("Rebasing onto '{}'...", branch);
+                    let result = repo.rebase_onto(&branch)?;
+
+                    if result.success {
+                        println!("{}", result.message);
+                        if !result.rebased_commits.is_empty() {
+                            println!("Rebased commits:");
+                            for commit in &result.rebased_commits {
+                                println!("  - {}", &commit[..8]);
+                            }
+                        }
+                    } else {
+                        println!("CONFLICT: {}", result.message);
+                        if !result.conflicts.is_empty() {
+                            println!("\nConflicted files:");
+                            for conflict in &result.conflicts {
+                                println!("  - {}", conflict);
+                            }
+                            println!("\nResolve conflicts, stage changes, and run 'gitup rebase continue'");
+                        }
+                    }
+                }
+                RebaseCommands::Interactive { upstream, onto } => {
+                    println!("Starting interactive rebase...");
+                    let result = repo.rebase_interactive(&upstream, onto.as_deref())?;
+                    println!("{}", result.message);
+                    if !result.rebased_commits.is_empty() {
+                        println!("Commits to rebase:");
+                        for commit in &result.rebased_commits {
+                            println!("  - {}", &commit[..8]);
+                        }
+                    }
+                }
+                RebaseCommands::Continue => {
+                    let result = repo.rebase_continue()?;
+
+                    if result.success {
+                        println!("{}", result.message);
+                        if !result.rebased_commits.is_empty() {
+                            println!("Rebased commits:");
+                            for commit in &result.rebased_commits {
+                                println!("  - {}", &commit[..8]);
+                            }
+                        }
+                    } else {
+                        println!("Cannot continue: {}", result.message);
+                        if !result.conflicts.is_empty() {
+                            println!("\nConflicted files:");
+                            for conflict in &result.conflicts {
+                                println!("  - {}", conflict);
+                            }
+                        }
+                    }
+                }
+                RebaseCommands::Abort => {
+                    let result = repo.rebase_abort()?;
+                    println!("{}", result);
+                }
+                RebaseCommands::Skip => {
+                    let result = repo.rebase_skip()?;
+                    println!("{}", result.message);
+                }
+                RebaseCommands::Status => {
+                    let status = repo.rebase_status()?;
+                    println!("{}", status);
+                }
+            }
+        }
+        Commands::CherryPick { path, command } => {
+            let repo = Repository::open(&path)?;
+
+            match command {
+                CherryPickCommands::Commit { commit } => {
+                    println!("Cherry-picking commit '{}'...", &commit[..8.min(commit.len())]);
+                    let result = repo.cherry_pick(&commit)?;
+
+                    if result.success {
+                        println!("{}", result.message);
+                        if let Some(picked) = result.picked_commit {
+                            println!("Created commit: {}", &picked[..8]);
+                        }
+                    } else {
+                        println!("CONFLICT: {}", result.message);
+                        if !result.conflicts.is_empty() {
+                            println!("\nConflicted files:");
+                            for conflict in &result.conflicts {
+                                println!("  - {}", conflict);
+                            }
+                            println!("\nResolve conflicts, stage changes, and run 'gitup cherry-pick continue'");
+                        }
+                    }
+                }
+                CherryPickCommands::Range { start, end } => {
+                    println!("Cherry-picking commits from {} to {}...",
+                        &start[..8.min(start.len())], &end[..8.min(end.len())]);
+                    let results = repo.cherry_pick_range(&start, &end)?;
+
+                    for result in results {
+                        if result.success {
+                            println!("{}", result.message);
+                        } else {
+                            println!("CONFLICT: {}", result.message);
+                            if !result.conflicts.is_empty() {
+                                println!("\nConflicted files:");
+                                for conflict in &result.conflicts {
+                                    println!("  - {}", conflict);
+                                }
+                                println!("\nResolve conflicts and run 'gitup cherry-pick continue'");
+                            }
+                            break;
+                        }
+                    }
+                }
+                CherryPickCommands::Continue => {
+                    let result = repo.cherry_pick_continue()?;
+
+                    if result.success {
+                        println!("{}", result.message);
+                        if let Some(picked) = result.picked_commit {
+                            println!("Created commit: {}", &picked[..8]);
+                        }
+                    } else {
+                        println!("Cannot continue: {}", result.message);
+                        if !result.conflicts.is_empty() {
+                            println!("\nConflicted files:");
+                            for conflict in &result.conflicts {
+                                println!("  - {}", conflict);
+                            }
+                        }
+                    }
+                }
+                CherryPickCommands::Abort => {
+                    let result = repo.cherry_pick_abort()?;
+                    println!("{}", result);
+                }
+                CherryPickCommands::Status => {
+                    let status = repo.cherry_pick_status()?;
+                    println!("{}", status);
                 }
             }
         }
