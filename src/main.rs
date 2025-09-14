@@ -1,6 +1,6 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
-use gitup_core::{Repository, FileStatus};
+use gitup_core::{Repository, FileStatus, ConflictResolution};
 use std::path::PathBuf;
 
 #[derive(Parser)]
@@ -168,6 +168,14 @@ enum Commands {
         #[command(subcommand)]
         command: TagCommands,
     },
+    /// Merge branches
+    Merge {
+        /// Path to the repository
+        #[arg(short = 'p', long, default_value = ".")]
+        path: PathBuf,
+        #[command(subcommand)]
+        command: MergeCommands,
+    },
 }
 
 #[derive(Subcommand)]
@@ -251,6 +259,45 @@ enum TagCommands {
         #[arg(short, long)]
         force: bool,
     },
+}
+
+#[derive(Subcommand)]
+enum MergeCommands {
+    /// Merge a branch into the current branch
+    Branch {
+        /// Branch name to merge
+        name: String,
+        /// Custom merge commit message
+        #[arg(short, long)]
+        message: Option<String>,
+    },
+    /// Abort an in-progress merge
+    Abort,
+    /// Continue an in-progress merge after resolving conflicts
+    Continue {
+        /// Custom merge commit message
+        #[arg(short, long)]
+        message: Option<String>,
+    },
+    /// Show merge status
+    Status,
+    /// List conflicted files
+    Conflicts,
+    /// Resolve a conflict by choosing a version
+    Resolve {
+        /// File path to resolve
+        file: String,
+        /// Resolution strategy (ours, theirs, manual)
+        #[arg(value_enum)]
+        strategy: ResolutionStrategy,
+    },
+}
+
+#[derive(Clone, Copy, Debug, clap::ValueEnum)]
+enum ResolutionStrategy {
+    Ours,
+    Theirs,
+    Manual,
 }
 
 #[derive(Subcommand)]
@@ -595,6 +642,78 @@ fn main() -> Result<()> {
                 }
                 TagCommands::Push { remote, tag, force } => {
                     let result = repo.tag_push(&remote, tag.as_deref(), force)?;
+                    println!("{}", result);
+                }
+            }
+        }
+        Commands::Merge { path, command } => {
+            let repo = Repository::open(&path)?;
+
+            match command {
+                MergeCommands::Branch { name, message } => {
+                    println!("Merging branch '{}'...", name);
+                    let result = repo.merge_branch(&name, message.as_deref())?;
+
+                    if result.success {
+                        println!("{}", result.message);
+                        if let Some(commit) = result.merged_commit {
+                            println!("Created merge commit: {}", &commit[..8]);
+                        }
+                    } else {
+                        println!("CONFLICT: {}", result.message);
+                        if !result.conflicts.is_empty() {
+                            println!("\nConflicted files:");
+                            for conflict in &result.conflicts {
+                                println!("  - {}", conflict);
+                            }
+                            println!("\nResolve conflicts, stage changes, and run 'gitup merge continue'");
+                        }
+                    }
+                }
+                MergeCommands::Abort => {
+                    let result = repo.merge_abort()?;
+                    println!("{}", result);
+                }
+                MergeCommands::Continue { message } => {
+                    let result = repo.merge_continue(message.as_deref())?;
+
+                    if result.success {
+                        println!("{}", result.message);
+                        if let Some(commit) = result.merged_commit {
+                            println!("Created merge commit: {}", &commit[..8]);
+                        }
+                    } else {
+                        println!("Cannot continue: {}", result.message);
+                        if !result.conflicts.is_empty() {
+                            println!("\nConflicted files:");
+                            for conflict in &result.conflicts {
+                                println!("  - {}", conflict);
+                            }
+                        }
+                    }
+                }
+                MergeCommands::Status => {
+                    let status = repo.merge_status()?;
+                    println!("{}", status);
+                }
+                MergeCommands::Conflicts => {
+                    let conflicts = repo.merge_conflicts()?;
+                    if conflicts.is_empty() {
+                        println!("No conflicts");
+                    } else {
+                        println!("Conflicted files:");
+                        for conflict in conflicts {
+                            println!("  - {}", conflict);
+                        }
+                    }
+                }
+                MergeCommands::Resolve { file, strategy } => {
+                    let resolution = match strategy {
+                        ResolutionStrategy::Ours => ConflictResolution::Ours,
+                        ResolutionStrategy::Theirs => ConflictResolution::Theirs,
+                        ResolutionStrategy::Manual => ConflictResolution::Manual,
+                    };
+                    let result = repo.merge_resolve_conflict(&file, resolution)?;
                     println!("{}", result);
                 }
             }

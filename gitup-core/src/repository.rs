@@ -4,9 +4,10 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use crate::diff::{Diff, FileDiff, DiffStats};
 use crate::commit::{Commit, Status, FileStatus};
-use crate::remote::{RemoteInfo, RemoteOps, TransferProgress};
+use crate::remote::{RemoteInfo, RemoteOps};
 use crate::stash::{StashInfo, StashOps};
 use crate::tag::{TagInfo, TagOps};
+use crate::merge::{MergeOps, MergeResult, ConflictResolution};
 
 pub struct Repository {
     path: PathBuf,
@@ -365,6 +366,44 @@ impl Repository {
     pub fn tag_exists(&self, name: &str) -> Result<bool> {
         let ops = TagOps::new(&self.path)?;
         Ok(ops.exists(name))
+    }
+
+    // Merge operations
+
+    /// Merge a branch into the current branch
+    pub fn merge_branch(&self, branch_name: &str, message: Option<&str>) -> Result<MergeResult> {
+        let ops = MergeOps::new(&self.path)?;
+        ops.merge_branch(branch_name, message)
+    }
+
+    /// Abort an in-progress merge
+    pub fn merge_abort(&self) -> Result<String> {
+        let ops = MergeOps::new(&self.path)?;
+        ops.abort_merge()
+    }
+
+    /// Continue an in-progress merge
+    pub fn merge_continue(&self, message: Option<&str>) -> Result<MergeResult> {
+        let ops = MergeOps::new(&self.path)?;
+        ops.continue_merge(message)
+    }
+
+    /// Get merge status
+    pub fn merge_status(&self) -> Result<String> {
+        let ops = MergeOps::new(&self.path)?;
+        ops.merge_status()
+    }
+
+    /// Get list of conflicted files
+    pub fn merge_conflicts(&self) -> Result<Vec<String>> {
+        let ops = MergeOps::new(&self.path)?;
+        ops.get_conflicts()
+    }
+
+    /// Resolve a conflict
+    pub fn merge_resolve_conflict(&self, file_path: &str, resolution: ConflictResolution) -> Result<String> {
+        let ops = MergeOps::new(&self.path)?;
+        ops.resolve_conflict(file_path, resolution)
     }
 }
 
