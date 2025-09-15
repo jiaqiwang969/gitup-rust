@@ -7,6 +7,7 @@ edition = "2021"
 members = [
     "gitup-core",
     "gitup-ui",
+    "gitup-tui",
     "gitup-ffi"
 ]
 
