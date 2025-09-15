@@ -7,6 +7,9 @@ pub mod vim;
 pub mod event;
 pub mod watcher;
 pub mod operations;
+pub mod graph;
+pub mod graph_builder;
+pub mod app;
 
 // Re-export main types
 pub use vim::{
@@ -42,4 +45,17 @@ pub use operations::{
     OperationResult,
     ResetMode,
     MergeStrategy,
+};
+
+pub use graph::{
+    GraphView,
+    GitGraph,
+    GraphNode,
+};
+
+pub use graph_builder::GraphBuilder;
+
+pub use app::{
+    App,
+    run_tui,
 };

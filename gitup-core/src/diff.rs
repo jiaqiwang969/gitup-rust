@@ -1,7 +1,7 @@
 use anyhow::Result;
 use git2::{Delta, DiffOptions, Repository as Git2Repository};
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::path::Path;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DiffFile {
@@ -103,6 +103,47 @@ impl<'repo> Diff<'repo> {
 
         let diff = self.repo.diff_tree_to_tree(parent_tree.as_ref(), Some(&tree), None)?;
         self.process_diff(diff)
+    }
+
+    /// Get diff for a specific file in working directory
+    pub fn file_diff(&self, path: &Path) -> Result<FileDiff> {
+        // First try to get diff between index and working directory
+        let mut opts = git2::DiffOptions::new();
+        opts.pathspec(path);
+
+        let diff = self.repo.diff_index_to_workdir(None, Some(&mut opts))?;
+        let mut file_diffs = self.process_diff(diff)?;
+
+        if !file_diffs.is_empty() {
+            // Found changes in working directory
+            return file_diffs.pop().ok_or_else(|| anyhow::anyhow!("No diff found for file: {:?}", path));
+        }
+
+        // If no working directory changes, check if file is staged
+        let head = self.repo.head()?.peel_to_tree()?;
+        let diff = self.repo.diff_tree_to_index(Some(&head), None, Some(&mut opts))?;
+        let mut file_diffs = self.process_diff(diff)?;
+
+        file_diffs.pop().ok_or_else(|| anyhow::anyhow!("No diff found for file: {:?}", path))
+    }
+
+    /// Get staged diff for a specific file
+    pub fn staged_file_diff(&self, path: &Path) -> Result<FileDiff> {
+        let mut opts = git2::DiffOptions::new();
+        opts.pathspec(path);
+
+        // Try to get diff from HEAD to index
+        let diff = if let Ok(head) = self.repo.head() {
+            let head_tree = head.peel_to_tree()?;
+            self.repo.diff_tree_to_index(Some(&head_tree), None, Some(&mut opts))?
+        } else {
+            // No HEAD (initial commit), compare against empty tree
+            self.repo.diff_tree_to_index(None, None, Some(&mut opts))?
+        };
+
+        let mut file_diffs = self.process_diff(diff)?;
+
+        file_diffs.pop().ok_or_else(|| anyhow::anyhow!("No staged diff found for file: {:?}", path))
     }
 
     fn process_diff(&self, mut diff: git2::Diff) -> Result<Vec<FileDiff>> {

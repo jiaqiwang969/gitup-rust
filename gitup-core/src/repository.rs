@@ -180,6 +180,18 @@ impl Repository {
         Ok(DiffStats::from_diffs(&diffs))
     }
 
+    /// Get diff for a specific file in working directory
+    pub fn diff_file<P: AsRef<Path>>(&self, path: P) -> Result<FileDiff> {
+        let diff = Diff::new(&self.git_repo);
+        diff.file_diff(path.as_ref())
+    }
+
+    /// Get staged diff for a specific file
+    pub fn diff_staged_file<P: AsRef<Path>>(&self, path: P) -> Result<FileDiff> {
+        let diff = Diff::new(&self.git_repo);
+        diff.staged_file_diff(path.as_ref())
+    }
+
     /// Stage a file
     pub fn stage_file<P: AsRef<Path>>(&self, path: P) -> Result<()> {
         let commit = Commit::new(&self.git_repo);
