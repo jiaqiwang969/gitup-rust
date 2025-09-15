@@ -5,6 +5,7 @@ use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use gitup_core::{Repository, CommitInfo, BranchInfo, CommitFileStatus, StatusType};
+use crate::simple_graph::{SimpleGraph, SimpleGraphWidget};
 use ratatui::{
     backend::{Backend, CrosstermBackend},
     layout::{Alignment, Constraint, Direction, Layout, Rect},
@@ -60,6 +61,11 @@ pub struct App {
     pub scroll_position: u16,
     pub should_quit: bool,
     pub message: Option<(String, Instant)>,
+
+    // Graph visualization
+    pub show_graph: bool,
+    pub simple_graph: SimpleGraph,
+
     // Vim mode support
     pub vim_mode: VimMode,
     pub command_buffer: String,
@@ -109,6 +115,11 @@ impl App {
             scroll_position: 0,
             should_quit: false,
             message: None,
+
+            // Graph visualization
+            show_graph: false,
+            simple_graph: SimpleGraph::new(),
+
             // Initialize Vim mode
             vim_mode: VimMode::Normal,
             command_buffer: String::new(),
@@ -679,6 +690,15 @@ fn handle_normal_mode(app: &mut App, key: crossterm::event::KeyEvent) {
             }
         }
 
+        // Toggle graph visualization
+        KeyCode::Char('v') if app.current_tab == 0 => {
+            app.show_graph = !app.show_graph;
+            app.message = Some((
+                format!("Graph view: {}", if app.show_graph { "ON" } else { "OFF" }),
+                Instant::now()
+            ));
+        }
+
         // Quick navigation
         KeyCode::Char('g') if app.count.is_none() => {
             // gg - go to top
@@ -1125,32 +1145,43 @@ fn ui(f: &mut Frame, app: &App) {
 }
 
 fn draw_commits_tab(f: &mut Frame, app: &App, area: Rect) {
-    let commits: Vec<ListItem> = app
-        .commits
-        .iter()
-        .map(|c| {
-            let content = vec![
-                Line::from(vec![
-                    Span::styled(&c.id[..8], Style::default().fg(Color::Yellow)),
-                    Span::raw(" - "),
-                    Span::raw(&c.author),
-                ]),
-                Line::from(Span::raw(&c.message)),
-            ];
-            ListItem::new(content)
-        })
-        .collect();
+    if app.show_graph {
+        // Use graph visualization
+        let widget = SimpleGraphWidget::new(
+            &app.simple_graph,
+            &app.commits,
+            &app.branches,
+        ).selected(app.selected_commit.selected());
+        f.render_widget(widget, area);
+    } else {
+        // Use traditional list view
+        let commits: Vec<ListItem> = app
+            .commits
+            .iter()
+            .map(|c| {
+                let content = vec![
+                    Line::from(vec![
+                        Span::styled(&c.id[..8], Style::default().fg(Color::Yellow)),
+                        Span::raw(" - "),
+                        Span::raw(&c.author),
+                    ]),
+                    Line::from(Span::raw(&c.message)),
+                ];
+                ListItem::new(content)
+            })
+            .collect();
 
-    let commits_list = List::new(commits)
-        .block(Block::default().borders(Borders::ALL).title("Commit History"))
-        .highlight_style(
-            Style::default()
-                .bg(Color::LightGreen)
-                .add_modifier(Modifier::BOLD),
-        )
-        .highlight_symbol(">> ");
+        let commits_list = List::new(commits)
+            .block(Block::default().borders(Borders::ALL).title("Commit History"))
+            .highlight_style(
+                Style::default()
+                    .bg(Color::LightGreen)
+                    .add_modifier(Modifier::BOLD),
+            )
+            .highlight_symbol(">> ");
 
-    f.render_stateful_widget(commits_list, area, &mut app.selected_commit.clone());
+        f.render_stateful_widget(commits_list, area, &mut app.selected_commit.clone());
+    }
 }
 
 fn draw_branches_tab(f: &mut Frame, app: &App, area: Rect) {
