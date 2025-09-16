@@ -1,0 +1,58 @@
+@startuml architecture
+title Commit 05: Compact Lane Management Architecture
+
+skinparam shadowing false
+skinparam rectangle {
+  roundCorner 12
+}
+
+package "Compact Layout" as Compact {
+  class CompactRowBuilder {
+    -max_lanes: usize
+    -free_lanes: VecDeque<LaneIdx>
+    -active_lanes: HashMap<String, LaneIdx>
+    -reserved_lanes: HashSet<LaneIdx>
+    -lane_ends: HashMap<String, usize>
+    --
+    +build_rows(dag: &Dag): Vec<Row>
+    -build_compact_row(commit, dag, row_idx): Row
+    -allocate_lane(commit_id): LaneIdx
+    -get_or_allocate_lane(commit_id): LaneIdx
+    -find_lru_lane(): LaneIdx
+    -free_expired_lanes(row_idx)
+    -schedule_lane_free(commit_id, row_idx)
+    -calculate_lane_lifetimes(dag)
+  }
+
+  class "LanePool" as Pool <<(C,orchid)concept>> {
+    Free lanes: [0, 3, 5]
+    Active: {c1→2, c3→1}
+    Reserved: [4]
+  }
+}
+
+package "Original Layout" as Original {
+  class RowBuilder {
+    Simple increment
+    No compression
+  }
+}
+
+CompactRowBuilder ..> Pool : manages
+
+note right of CompactRowBuilder
+  Compression strategies:
+  - Reuse parent's lane
+  - Free ended branches
+  - LRU lane allocation
+  - Lifetime prediction
+end note
+
+note bottom of Pool
+  Example compression:
+  Before: 8 lanes used
+  After:  3 lanes used
+  Saved:  62.5% width
+end note
+
+@enduml

@@ -1,0 +1,64 @@
+@startuml algorithm_flow
+title Commit 05: Lane Compression Algorithm
+
+start
+
+:Initialize CompactRowBuilder;
+note right
+  free_lanes = [0..max_lanes]
+  active_lanes = {}
+  lane_ends = {}
+end note
+
+:Calculate lane lifetimes;
+note left
+  Analyze DAG structure
+  Predict branch endpoints
+end note
+
+partition "For each commit (row)" {
+  :Free expired lanes;
+  partition "Check lane_ends" {
+    if (Lane lifetime ended?) then (yes)
+      :Move lane to free_lanes;
+      :Remove from active_lanes;
+    endif
+  }
+
+  :Determine primary lane;
+  if (Single parent?) then (yes)
+    if (Parent has lane?) then (yes)
+      :Reuse parent's lane;
+      note right: Compression!
+    else (no)
+      :Allocate new lane;
+    endif
+  else (multiple/no parents)
+    :Allocate new lane;
+  endif
+
+  partition "Allocate lane" {
+    if (Free lanes available?) then (yes)
+      :Pop from free_lanes;
+    else (no)
+      :Find LRU lane;
+      note left
+        Least Recently Used
+        or highest index
+      end note
+    endif
+  }
+
+  :Build row with lanes;
+
+  if (Commit has no children?) then (yes)
+    :Schedule lane for freeing;
+    note right: Mark for reuse
+  endif
+}
+
+:Return compressed rows;
+
+stop
+
+@enduml
