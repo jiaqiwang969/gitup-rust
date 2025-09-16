@@ -23,9 +23,11 @@ pub struct EnhancedGraphIntegration {
     viewport: SeamlessViewport,
     /// Text formatter
     formatter: CommitMessageFormatter,
-    /// Cell router
+    /// Cell router - used internally for routing decisions
+    #[allow(dead_code)]
     router: CellRouter,
-    /// Conflict resolver
+    /// Conflict resolver - used internally for conflict resolution
+    #[allow(dead_code)]
     resolver: ConflictResolver,
     /// Renderer
     renderer: graph::TuiRenderer,

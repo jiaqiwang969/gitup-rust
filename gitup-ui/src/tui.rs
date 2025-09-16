@@ -23,6 +23,7 @@ use ratatui::{
     Frame, Terminal,
 };
 use std::{
+    cell::RefCell,
     io,
     path::{Path, PathBuf},
     time::{Duration, Instant},
@@ -83,7 +84,7 @@ pub struct App {
     pub graph_watcher: Option<GitWatcher>,
 
     // Enhanced graph integration
-    pub enhanced_graph: Option<EnhancedGraphIntegration>,
+    pub enhanced_graph: Option<RefCell<EnhancedGraphIntegration>>,
     pub use_enhanced_graph: bool,
 
     // Vim mode support
@@ -790,8 +791,8 @@ fn handle_normal_mode(app: &mut App, key: crossterm::event::KeyEvent) {
                     app.scroll_down(1);
                 } else if app.use_enhanced_graph && app.current_tab == 0 {
                     // Handle enhanced graph navigation
-                    if let Some(graph) = app.enhanced_graph.as_mut() {
-                        graph.handle_input(crossterm::event::KeyCode::Down);
+                    if let Some(graph) = app.enhanced_graph.as_ref() {
+                        graph.borrow_mut().handle_input(crossterm::event::KeyCode::Down);
                     }
                 } else {
                     app.next_item();
@@ -805,8 +806,8 @@ fn handle_normal_mode(app: &mut App, key: crossterm::event::KeyEvent) {
                     app.scroll_up(1);
                 } else if app.use_enhanced_graph && app.current_tab == 0 {
                     // Handle enhanced graph navigation
-                    if let Some(graph) = app.enhanced_graph.as_mut() {
-                        graph.handle_input(crossterm::event::KeyCode::Up);
+                    if let Some(graph) = app.enhanced_graph.as_ref() {
+                        graph.borrow_mut().handle_input(crossterm::event::KeyCode::Up);
                     }
                 } else {
                     app.previous_item();
@@ -1023,7 +1024,7 @@ fn handle_normal_mode(app: &mut App, key: crossterm::event::KeyEvent) {
             if app.use_enhanced_graph && app.enhanced_graph.is_none() {
                 // Initialize enhanced graph on first use
                 if let Ok(graph) = EnhancedGraphIntegration::new(".") {
-                    app.enhanced_graph = Some(graph);
+                    app.enhanced_graph = Some(RefCell::new(graph));
                 }
             }
             app.message = Some((
@@ -1093,8 +1094,8 @@ fn handle_normal_mode(app: &mut App, key: crossterm::event::KeyEvent) {
             if app.current_tab == 3 {
                 app.scroll_down(10);
             } else if app.use_enhanced_graph && app.current_tab == 0 {
-                if let Some(graph) = app.enhanced_graph.as_mut() {
-                    graph.handle_input(crossterm::event::KeyCode::PageDown);
+                if let Some(graph) = app.enhanced_graph.as_ref() {
+                    graph.borrow_mut().handle_input(crossterm::event::KeyCode::PageDown);
                 }
             } else if app.current_tab == 0 && app.show_graph {
                 app.graph_page_down();
@@ -1104,8 +1105,8 @@ fn handle_normal_mode(app: &mut App, key: crossterm::event::KeyEvent) {
             if app.current_tab == 3 {
                 app.scroll_up(10);
             } else if app.use_enhanced_graph && app.current_tab == 0 {
-                if let Some(graph) = app.enhanced_graph.as_mut() {
-                    graph.handle_input(crossterm::event::KeyCode::PageUp);
+                if let Some(graph) = app.enhanced_graph.as_ref() {
+                    graph.borrow_mut().handle_input(crossterm::event::KeyCode::PageUp);
                 }
             } else if app.current_tab == 0 && app.show_graph {
                 app.graph_page_up();
@@ -1115,8 +1116,8 @@ fn handle_normal_mode(app: &mut App, key: crossterm::event::KeyEvent) {
             if app.current_tab == 3 {
                 app.scroll_down(20);
             } else if app.use_enhanced_graph && app.current_tab == 0 {
-                if let Some(graph) = app.enhanced_graph.as_mut() {
-                    graph.handle_input(crossterm::event::KeyCode::PageDown);
+                if let Some(graph) = app.enhanced_graph.as_ref() {
+                    graph.borrow_mut().handle_input(crossterm::event::KeyCode::PageDown);
                 }
             } else if app.current_tab == 0 && app.show_graph {
                 app.graph_page_down();
@@ -1126,8 +1127,8 @@ fn handle_normal_mode(app: &mut App, key: crossterm::event::KeyEvent) {
             if app.current_tab == 3 {
                 app.scroll_up(20);
             } else if app.use_enhanced_graph && app.current_tab == 0 {
-                if let Some(graph) = app.enhanced_graph.as_mut() {
-                    graph.handle_input(crossterm::event::KeyCode::PageUp);
+                if let Some(graph) = app.enhanced_graph.as_ref() {
+                    graph.borrow_mut().handle_input(crossterm::event::KeyCode::PageUp);
                 }
             } else if app.current_tab == 0 && app.show_graph {
                 app.graph_page_up();
@@ -1369,14 +1370,8 @@ fn draw_commits_tab(f: &mut Frame, app: &App, area: Rect) {
     // Use enhanced graph if enabled
     if app.use_enhanced_graph {
         if let Some(enhanced_graph) = &app.enhanced_graph {
-            let app_mut = unsafe { &mut *(app_ptr as *mut App) };
-            app_mut.enhanced_graph.as_mut().unwrap().render(area, f.buffer_mut());
-        } else {
-            // Try to initialize enhanced graph
-            let app_mut = unsafe { &mut *(app_ptr as *mut App) };
-            if let Ok(graph) = EnhancedGraphIntegration::new(".") {
-                app_mut.enhanced_graph = Some(graph);
-            }
+            // Use RefCell's borrow_mut to get mutable access
+            enhanced_graph.borrow_mut().render(area, f.buffer_mut());
         }
         return;
     }
