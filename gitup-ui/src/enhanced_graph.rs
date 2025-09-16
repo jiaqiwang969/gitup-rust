@@ -7,7 +7,7 @@ use ratatui::{
 };
 
 use graph::{
-    GitWalker, CompactRowBuilder, SeamlessViewport,
+    GitWalker, SeamlessViewport,
     TextLayout, CjkMode, CommitMessageFormatter,
     CellRouter, CharsetProfile, ConflictResolver,
     ViewportCarryOver, Color as GraphColor,
@@ -40,8 +40,8 @@ impl EnhancedGraphIntegration {
         let walker = GitWalker::new(Some(repo_path))?;
         let dag = walker.into_dag(None)?;
 
-        // Build compact layout
-        let mut builder = CompactRowBuilder::new(12); // More lanes for complex repos
+        // Build simple layout with continuous lines
+        let mut builder = graph::layout::SimpleGraphBuilder::new(12);
         let rows = builder.build_rows(&dag);
 
         // Create seamless viewport
@@ -247,7 +247,7 @@ impl EnhancedGraphIntegration {
         let walker = GitWalker::new(Some(repo_path))?;
         self.dag = walker.into_dag(None)?;
 
-        let mut builder = CompactRowBuilder::new(12);
+        let mut builder = graph::layout::SimpleGraphBuilder::new(12);
         self.rows = builder.build_rows(&self.dag);
 
         self.viewport = SeamlessViewport::new(30, self.rows.len());
