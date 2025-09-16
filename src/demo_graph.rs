@@ -1,4 +1,4 @@
-use graph::{GitWalker, RowBuilder, TuiRenderer};
+use graph::{GitWalker, RowBuilder, TuiRenderer, CharsetProfile};
 
 fn main() {
     println!("GitUp-Rust Graph Demo");
@@ -34,7 +34,7 @@ fn main() {
     let rows = builder.build_rows(&dag);
 
     // Render
-    let renderer = TuiRenderer::new(10);
+    let renderer = TuiRenderer::new(10, CharsetProfile::Utf8Straight);
     let output = renderer.render_rows(&rows, Some(15));
 
     println!("Commit Graph:");

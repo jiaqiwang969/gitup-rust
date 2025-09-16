@@ -1,4 +1,5 @@
 use crate::layout::{Lane, LaneIdx};
+use crate::render::router::{ConflictResolver, CharsetProfile};
 use smallvec::SmallVec;
 
 // Direction bit masks
@@ -233,6 +234,8 @@ impl ViewportCarryOver {
 
     /// Apply carry-over to the first visible row with proper glyph selection
     pub fn apply_to_first_row(&self, cells: &mut [crate::render::Cell], width: usize) {
+        // Use conflict resolver to merge seam glyphs with already-rendered row glyphs
+        let resolver = ConflictResolver::new(CharsetProfile::Utf8Straight);
         for (idx, col_state) in self.columns.iter().enumerate() {
             if idx >= width * 2 {
                 break;
@@ -247,22 +250,23 @@ impl ViewportCarryOver {
 
                 // Apply the glyph if position is valid and empty
                 if pos < cells.len() {
-                    // Only override if cell is empty or we have a better glyph
-                    if cells[pos].ch == ' ' || should_override(cells[pos].ch, glyph) {
-                        cells[pos] = crate::render::Cell::new(glyph, color);
-                    }
+                    // Merge with existing glyph if needed (Z-merge)
+                    let ch = if cells[pos].ch == ' ' { glyph } else { resolver.merge_chars(cells[pos].ch, glyph) };
+                    cells[pos] = crate::render::Cell::new(ch, color);
                 }
 
                 // Handle diagonal connections
                 match state.entering_type {
                     EnteringType::DiagonalLeft => {
                         if pos > 0 && pos - 1 < cells.len() {
-                            cells[pos - 1] = crate::render::Cell::new('╲', color);
+                            let ch = if cells[pos - 1].ch == ' ' { '╲' } else { resolver.merge_chars(cells[pos - 1].ch, '╲') };
+                            cells[pos - 1] = crate::render::Cell::new(ch, color);
                         }
                     }
                     EnteringType::DiagonalRight => {
                         if pos + 1 < cells.len() {
-                            cells[pos + 1] = crate::render::Cell::new('╱', color);
+                            let ch = if cells[pos + 1].ch == ' ' { '╱' } else { resolver.merge_chars(cells[pos + 1].ch, '╱') };
+                            cells[pos + 1] = crate::render::Cell::new(ch, color);
                         }
                     }
                     _ => {}

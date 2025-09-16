@@ -1,5 +1,6 @@
 use crate::layout::Row;
-use crate::render::TuiRenderer;
+use crate::render::{TuiRenderer, SeamlessViewport, ViewportCarryOver};
+use crate::render::router::CharsetProfile;
 use std::cmp;
 
 /// Viewport represents the visible area of the graph
@@ -135,11 +136,11 @@ pub struct VirtualRenderer {
 }
 
 impl VirtualRenderer {
-    pub fn new(rows: Vec<Row>, viewport_height: usize, graph_width: usize) -> Self {
+    pub fn new(rows: Vec<Row>, viewport_height: usize, graph_width: usize, profile: CharsetProfile) -> Self {
         let total_rows = rows.len();
         Self {
             viewport: Viewport::new(viewport_height, total_rows),
-            renderer: TuiRenderer::new(graph_width),
+            renderer: TuiRenderer::new(graph_width, profile),
             rows,
         }
     }
@@ -157,7 +158,14 @@ impl VirtualRenderer {
 
         for (idx, row) in visible_rows.iter().enumerate() {
             let absolute_idx = start + idx;
-            let cells = self.renderer.render_row(row);
+            let mut cells = self.renderer.render_row(row);
+
+            // Overlay seam from previous row for the first visible line to avoid broken joints
+            if idx == 0 && self.viewport.top > 0 {
+                let width = self.renderer.graph_width();
+                let carry = ViewportCarryOver::from_row(&self.rows[self.viewport.top - 1], width);
+                carry.apply_to_first_row(&mut cells, width);
+            }
 
             // Add cursor indicator
             if absolute_idx == self.viewport.cursor {
@@ -287,7 +295,7 @@ mod tests {
     #[test]
     fn test_virtual_renderer() {
         let rows = create_test_rows(20);
-        let renderer = VirtualRenderer::new(rows, 10, 5);
+        let renderer = VirtualRenderer::new(rows, 10, 5, CharsetProfile::Utf8Straight);
 
         let output = renderer.render();
         assert!(!output.is_empty());

@@ -48,17 +48,18 @@ impl EnhancedGraphWidget {
             CjkMode::Off
         };
 
-        // Create components
-        let renderer = VirtualRenderer::new(rows.clone(), 30, 10);
-        let viewport = SeamlessViewport::new(30, rows.len());
-        let formatter = CommitMessageFormatter::new(cjk_mode);
-
         // Determine charset profile based on terminal
         let profile = if is_unicode_terminal() {
             CharsetProfile::Utf8Rounded
         } else {
             CharsetProfile::Ascii
         };
+
+        // Create components
+        // Create renderer; pass charset profile so glyphs merge consistently
+        let renderer = VirtualRenderer::new(rows.clone(), 30, 10, profile);
+        let viewport = SeamlessViewport::new(30, rows.len());
+        let formatter = CommitMessageFormatter::new(cjk_mode);
 
         let router = CellRouter::new(profile);
         let resolver = ConflictResolver::new(profile);
@@ -198,7 +199,7 @@ impl GraphAdapter {
         let rows = builder.build_rows(&dag);
 
         // Create renderer
-        let renderer = VirtualRenderer::new(rows.clone(), 30, 10);
+        let renderer = VirtualRenderer::new(rows.clone(), 30, 10, CharsetProfile::Utf8Rounded);
         let viewport = SeamlessViewport::new(30, rows.len());
 
         let cjk_mode = if TextLayout::detect_cjk_from_locale() {

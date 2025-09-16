@@ -1,4 +1,5 @@
 use crate::layout::{Row, Lane};
+use crate::render::router::{CharsetProfile, ConflictResolver};
 
 /// Box drawing characters for graph rendering
 pub mod chars {
@@ -76,10 +77,14 @@ pub struct TuiRenderer {
     graph_width: usize,
     /// Colors assigned to lanes
     lane_colors: Vec<Color>,
+    /// Charset profile for glyph selection/merging
+    profile: CharsetProfile,
+    /// Conflict resolver used for Z-merge when multiple strokes touch same cell
+    resolver: ConflictResolver,
 }
 
 impl TuiRenderer {
-    pub fn new(graph_width: usize) -> Self {
+    pub fn new(graph_width: usize, profile: CharsetProfile) -> Self {
         // Pre-assign colors to lanes
         let colors = vec![
             Color::Blue,
@@ -98,6 +103,26 @@ impl TuiRenderer {
         Self {
             graph_width,
             lane_colors,
+            profile,
+            resolver: ConflictResolver::new(profile),
+        }
+    }
+
+    /// Expose the configured graph width (lanes)
+    pub fn graph_width(&self) -> usize {
+        self.graph_width
+    }
+
+    /// Write a char into the cell grid with conflict-aware merge
+    #[inline]
+    fn put_char(&self, cells: &mut [Cell], idx: usize, ch: char, color: Color) {
+        if idx >= cells.len() { return; }
+        if cells[idx].ch == chars::SPACE {
+            cells[idx] = Cell::new(ch, color);
+        } else {
+            // Merge with existing glyph using resolver
+            let merged = self.resolver.merge_chars(cells[idx].ch, ch);
+            cells[idx] = Cell::new(merged, color);
         }
     }
 
@@ -115,12 +140,12 @@ impl TuiRenderer {
 
             match lane {
                 Lane::Empty => {
-                    cells[pos] = Cell::new(chars::SPACE, color);
-                    cells[pos + 1] = Cell::new(chars::SPACE, color);
+                    self.put_char(&mut cells, pos, chars::SPACE, color);
+                    self.put_char(&mut cells, pos + 1, chars::SPACE, color);
                 }
                 Lane::Pass => {
-                    cells[pos] = Cell::new(chars::VERTICAL, color);
-                    cells[pos + 1] = Cell::new(chars::SPACE, color);
+                    self.put_char(&mut cells, pos, chars::VERTICAL, color);
+                    self.put_char(&mut cells, pos + 1, chars::SPACE, color);
                 }
                 Lane::Commit => {
                     let ch = if lane_idx == row.primary_lane {
@@ -128,31 +153,30 @@ impl TuiRenderer {
                     } else {
                         chars::COMMIT_EMPTY
                     };
-                    cells[pos] = Cell::new(ch, color);
-                    cells[pos + 1] = Cell::new(chars::SPACE, color);
+                    self.put_char(&mut cells, pos, ch, color);
+                    self.put_char(&mut cells, pos + 1, chars::SPACE, color);
                 }
                 Lane::BranchStart => {
-                    cells[pos] = Cell::new(chars::BRANCH_UP_RIGHT, color);
-                    cells[pos + 1] = Cell::new(chars::HORIZONTAL, color);
+                    self.put_char(&mut cells, pos, chars::BRANCH_UP_RIGHT, color);
+                    self.put_char(&mut cells, pos + 1, chars::HORIZONTAL, color);
                 }
                 Lane::Merge(targets) => {
                     // Simple merge rendering
-                    cells[pos] = Cell::new(chars::MERGE_LEFT, color);
-                    cells[pos + 1] = Cell::new(chars::HORIZONTAL, color);
+                    self.put_char(&mut cells, pos, chars::MERGE_LEFT, color);
+                    self.put_char(&mut cells, pos + 1, chars::HORIZONTAL, color);
 
                     // Draw lines to merge targets
                     for &target in targets {
                         if target < self.graph_width && target != lane_idx {
                             let target_pos = target * 2;
-                            if target_pos < cells.len() {
-                                cells[target_pos] = Cell::new(chars::VERTICAL, self.lane_colors[target]);
-                            }
+                            let tcolor = self.lane_colors[target % self.lane_colors.len()];
+                            self.put_char(&mut cells, target_pos, chars::VERTICAL, tcolor);
                         }
                     }
                 }
                 Lane::End => {
-                    cells[pos] = Cell::new(chars::BRANCH_DOWN_LEFT, color);
-                    cells[pos + 1] = Cell::new(chars::SPACE, color);
+                    self.put_char(&mut cells, pos, chars::BRANCH_DOWN_LEFT, color);
+                    self.put_char(&mut cells, pos + 1, chars::SPACE, color);
                 }
             }
         }
@@ -253,7 +277,7 @@ mod tests {
 
     #[test]
     fn test_tui_renderer() {
-        let renderer = TuiRenderer::new(5);
+        let renderer = TuiRenderer::new(5, CharsetProfile::Utf8Straight);
         let row = create_test_row();
         let cells = renderer.render_row(&row);
 

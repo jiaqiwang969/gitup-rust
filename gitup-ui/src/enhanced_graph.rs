@@ -60,8 +60,8 @@ impl EnhancedGraphIntegration {
         let router = CellRouter::new(profile);
         let resolver = ConflictResolver::new(profile);
 
-        // Create renderer
-        let renderer = graph::TuiRenderer::new(12);
+        // Create renderer with detected charset profile
+        let renderer = graph::TuiRenderer::new(12, profile);
 
         Ok(Self {
             dag,
