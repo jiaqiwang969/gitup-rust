@@ -4,16 +4,12 @@ use std::collections::HashMap;
 
 /// Simple graph builder that focuses on continuous lines
 pub struct SimpleGraphBuilder {
-    lanes: Vec<Option<String>>, // lane -> commit_id mapping
     max_lanes: usize,
 }
 
 impl SimpleGraphBuilder {
     pub fn new(max_lanes: usize) -> Self {
-        Self {
-            lanes: vec![None; max_lanes],
-            max_lanes,
-        }
+        Self { max_lanes }
     }
 
     pub fn build_rows(&mut self, dag: &Dag) -> Vec<Row> {
@@ -23,49 +19,80 @@ impl SimpleGraphBuilder {
         let mut commits: Vec<&CommitNode> = dag.nodes.values().collect();
         commits.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
 
-        // Pre-allocate lanes for all commits to ensure continuity
-        let mut commit_lanes: HashMap<String, LaneIdx> = HashMap::new();
-        let mut next_lane = 0;
-
-        // First pass: assign lanes to ensure linear history stays in same lane
-        for commit in &commits {
-            if !commit_lanes.contains_key(&commit.id) {
-                commit_lanes.insert(commit.id.clone(), next_lane);
-
-                // If this has a single parent, try to keep it in the same lane
-                if commit.parents.len() == 1 {
-                    let parent_id = &commit.parents[0];
-                    if !commit_lanes.contains_key(parent_id) {
-                        commit_lanes.insert(parent_id.clone(), next_lane);
-                    }
-                } else {
-                    next_lane = (next_lane + 1) % self.max_lanes;
-                }
-            }
+        if commits.is_empty() {
+            return rows;
         }
 
-        // Second pass: build rows with proper lanes
-        for commit in &commits {
-            let primary_lane = *commit_lanes.get(&commit.id).unwrap_or(&0);
+        // Track which lanes are actively used
+        let mut active_lanes: Vec<Option<String>> = vec![None; self.max_lanes];
+        let mut commit_lanes: HashMap<String, LaneIdx> = HashMap::new();
 
-            // Create lanes array
+        // Build each row
+        for commit in &commits {
+            // Find or allocate a lane for this commit
+            let primary_lane = if let Some(existing_lane) = commit_lanes.get(&commit.id) {
+                *existing_lane
+            } else {
+                // Find first free lane
+                let lane = active_lanes
+                    .iter()
+                    .position(|l| l.is_none())
+                    .unwrap_or(0);
+                commit_lanes.insert(commit.id.clone(), lane);
+                lane
+            };
+
+            // Create the lanes array for this row
             let mut lanes = vec![Lane::Empty; self.max_lanes];
 
-            // Set current commit
+            // First, mark all lanes that have active commits passing through
+            for (lane_idx, active_commit) in active_lanes.iter().enumerate() {
+                if let Some(active_id) = active_commit {
+                    if active_id != &commit.id {
+                        // This lane has a different commit, draw a line through
+                        lanes[lane_idx] = Lane::Pass;
+                    }
+                }
+            }
+
+            // Set the current commit
             lanes[primary_lane] = Lane::Commit;
+            active_lanes[primary_lane] = Some(commit.id.clone());
 
-            // Mark lanes that continue through this row
-            for other_commit in &commits {
-                if other_commit.id != commit.id {
-                    if let Some(&other_lane) = commit_lanes.get(&other_commit.id) {
-                        // Check if this commit is connected to the other commit
-                        let is_parent = commit.parents.contains(&other_commit.id);
-                        let is_child = other_commit.parents.contains(&commit.id);
-
-                        if (is_parent || is_child) && lanes[other_lane] == Lane::Empty {
-                            lanes[other_lane] = Lane::Pass;
+            // Reserve lanes for parents
+            for (i, parent_id) in commit.parents.iter().enumerate() {
+                if !commit_lanes.contains_key(parent_id) {
+                    // Allocate a lane for this parent
+                    if i == 0 && active_lanes[primary_lane] == Some(commit.id.clone()) {
+                        // First parent inherits the same lane
+                        commit_lanes.insert(parent_id.clone(), primary_lane);
+                    } else {
+                        // Other parents get new lanes
+                        if let Some(free_lane) = active_lanes.iter().position(|l| l.is_none()) {
+                            commit_lanes.insert(parent_id.clone(), free_lane);
+                            active_lanes[free_lane] = Some(parent_id.clone());
+                            lanes[free_lane] = Lane::Pass;
                         }
                     }
+                }
+            }
+
+            // Handle merge visualization
+            if commit.parents.len() > 1 {
+                let mut merge_targets = Vec::new();
+                for parent_id in &commit.parents[1..] {
+                    if let Some(&parent_lane) = commit_lanes.get(parent_id) {
+                        if parent_lane != primary_lane {
+                            merge_targets.push(parent_lane);
+                            // Make sure the merge target lane is marked
+                            if lanes[parent_lane] == Lane::Empty {
+                                lanes[parent_lane] = Lane::Pass;
+                            }
+                        }
+                    }
+                }
+                if !merge_targets.is_empty() {
+                    lanes[primary_lane] = Lane::Merge(merge_targets);
                 }
             }
 
@@ -75,99 +102,24 @@ impl SimpleGraphBuilder {
                 lanes,
                 primary_lane,
             });
+
+            // After processing, update active lanes for parent continuity
+            if commit.parents.len() == 1 {
+                // Single parent continues in the same lane
+                active_lanes[primary_lane] = Some(commit.parents[0].clone());
+            } else if commit.parents.is_empty() {
+                // No parents, free the lane
+                active_lanes[primary_lane] = None;
+            }
+            // For merge commits, the lane continues with first parent
+            else if !commit.parents.is_empty() {
+                active_lanes[primary_lane] = Some(commit.parents[0].clone());
+            }
         }
 
         rows
     }
 
-    fn build_simple_row(&mut self, commit: &CommitNode, dag: &Dag) -> Row {
-        // Find or allocate a lane for this commit
-        let primary_lane = self.find_or_allocate_lane(&commit.id);
-
-        // Create lanes array
-        let mut lanes = vec![Lane::Empty; self.max_lanes];
-
-        // Mark all active lanes as passing
-        for (idx, lane_commit) in self.lanes.iter().enumerate() {
-            if let Some(commit_id) = lane_commit {
-                if commit_id == &commit.id {
-                    // This is the current commit
-                    lanes[idx] = Lane::Commit;
-                } else {
-                    // This lane continues through
-                    lanes[idx] = Lane::Pass;
-                }
-            }
-        }
-
-        // Handle merges (multiple parents)
-        if commit.parents.len() > 1 {
-            let mut merge_targets = Vec::new();
-            for parent_id in &commit.parents[1..] {
-                if let Some(parent_lane) = self.find_lane(parent_id) {
-                    merge_targets.push(parent_lane);
-                }
-            }
-            if !merge_targets.is_empty() {
-                lanes[primary_lane] = Lane::Merge(merge_targets);
-            }
-        }
-
-        // Handle branches (multiple children)
-        let children = dag.get_children(&commit.id);
-        if children.len() > 1 && primary_lane < self.max_lanes {
-            // This commit spawns branches
-            lanes[primary_lane] = Lane::BranchStart;
-        }
-
-        Row {
-            commit_id: commit.id.clone(),
-            commit: commit.clone(),
-            lanes,
-            primary_lane,
-        }
-    }
-
-    fn find_or_allocate_lane(&mut self, commit_id: &str) -> LaneIdx {
-        // First check if this commit already has a lane
-        if let Some(lane) = self.find_lane(commit_id) {
-            return lane;
-        }
-
-        // Find first available lane
-        for (idx, lane) in self.lanes.iter_mut().enumerate() {
-            if lane.is_none() {
-                *lane = Some(commit_id.to_string());
-                return idx;
-            }
-        }
-
-        // If no free lanes, reuse the first one
-        self.lanes[0] = Some(commit_id.to_string());
-        0
-    }
-
-    fn find_lane(&self, commit_id: &str) -> Option<LaneIdx> {
-        self.lanes.iter().position(|l| l.as_ref().map_or(false, |id| id == commit_id))
-    }
-
-    fn update_lanes_after_commit(&mut self, commit: &CommitNode) {
-        // Clear the lane for this commit
-        if let Some(lane_idx) = self.find_lane(&commit.id) {
-            self.lanes[lane_idx] = None;
-
-            // Assign lanes to parents
-            for (i, parent_id) in commit.parents.iter().enumerate() {
-                if i == 0 {
-                    // First parent continues in the same lane
-                    self.lanes[lane_idx] = Some(parent_id.clone());
-                } else {
-                    // Other parents need new lanes
-                    self.find_or_allocate_lane(parent_id);
-                }
-            }
-        }
-    }
 }
 
 #[cfg(test)]
