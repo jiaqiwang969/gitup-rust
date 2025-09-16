@@ -23,12 +23,58 @@ impl SimpleGraphBuilder {
         let mut commits: Vec<&CommitNode> = dag.nodes.values().collect();
         commits.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
 
-        for commit in commits {
-            let row = self.build_simple_row(commit, dag);
-            rows.push(row);
+        // Pre-allocate lanes for all commits to ensure continuity
+        let mut commit_lanes: HashMap<String, LaneIdx> = HashMap::new();
+        let mut next_lane = 0;
 
-            // Update lanes after building row
-            self.update_lanes_after_commit(commit);
+        // First pass: assign lanes to ensure linear history stays in same lane
+        for commit in &commits {
+            if !commit_lanes.contains_key(&commit.id) {
+                commit_lanes.insert(commit.id.clone(), next_lane);
+
+                // If this has a single parent, try to keep it in the same lane
+                if commit.parents.len() == 1 {
+                    let parent_id = &commit.parents[0];
+                    if !commit_lanes.contains_key(parent_id) {
+                        commit_lanes.insert(parent_id.clone(), next_lane);
+                    }
+                } else {
+                    next_lane = (next_lane + 1) % self.max_lanes;
+                }
+            }
+        }
+
+        // Second pass: build rows with proper lanes
+        for commit in &commits {
+            let primary_lane = *commit_lanes.get(&commit.id).unwrap_or(&0);
+
+            // Create lanes array
+            let mut lanes = vec![Lane::Empty; self.max_lanes];
+
+            // Set current commit
+            lanes[primary_lane] = Lane::Commit;
+
+            // Mark lanes that continue through this row
+            for other_commit in &commits {
+                if other_commit.id != commit.id {
+                    if let Some(&other_lane) = commit_lanes.get(&other_commit.id) {
+                        // Check if this commit is connected to the other commit
+                        let is_parent = commit.parents.contains(&other_commit.id);
+                        let is_child = other_commit.parents.contains(&commit.id);
+
+                        if (is_parent || is_child) && lanes[other_lane] == Lane::Empty {
+                            lanes[other_lane] = Lane::Pass;
+                        }
+                    }
+                }
+            }
+
+            rows.push(Row {
+                commit_id: commit.id.clone(),
+                commit: (*commit).clone(),
+                lanes,
+                primary_lane,
+            });
         }
 
         rows
