@@ -50,7 +50,7 @@ impl DebugOverlay {
                         if cell_idx < cells.len() {
                             // Overlay lane index as small number
                             let digit = (lane_idx % 10).to_string().chars().next().unwrap();
-                            cells[cell_idx] = Cell::new(digit, Color::Gray);
+                            cells[cell_idx] = Cell::new(digit, Color::Cyan);
                         }
                     }
                 }

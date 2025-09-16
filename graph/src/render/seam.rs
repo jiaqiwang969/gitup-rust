@@ -67,7 +67,7 @@ fn has_continuation_below(row: &crate::layout::Row, col: usize) -> bool {
 }
 
 /// Select appropriate glyph based on direction masks
-fn select_glyph_from_dirs(incoming: u8, outgoing: u8, prefer_straight: bool) -> char {
+fn select_glyph_from_dirs(incoming: u8, outgoing: u8, _prefer_straight: bool) -> char {
     // Quick paths for common cases
     if incoming == DIR_N && outgoing == DIR_S {
         return '│'; // Straight vertical
