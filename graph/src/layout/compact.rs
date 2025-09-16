@@ -37,8 +37,9 @@ impl CompactRowBuilder {
         // Pre-calculate lane lifetimes for better allocation
         self.calculate_lane_lifetimes(dag);
 
-        // Get topologically sorted commits
-        let sorted_commits = self.topological_sort(dag);
+        // Get commits sorted by time (newest first)
+        let mut sorted_commits: Vec<&CommitNode> = dag.nodes.values().collect();
+        sorted_commits.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
 
         for (row_idx, commit) in sorted_commits.iter().enumerate() {
             // Free lanes that are no longer needed
@@ -53,70 +54,59 @@ impl CompactRowBuilder {
 
     /// Build a single row with lane compression
     fn build_compact_row(&mut self, commit: &CommitNode, dag: &Dag, row_idx: usize) -> Row {
-        // Try to reuse parent's lane if single parent
-        let primary_lane = if commit.parents.len() == 1 {
-            if let Some(&parent_lane) = self.active_lanes.get(&commit.parents[0]) {
-                // Reuse parent's lane
-                self.active_lanes.remove(&commit.parents[0]);
-                self.active_lanes.insert(commit.id.clone(), parent_lane);
-                parent_lane
-            } else {
-                self.allocate_lane(&commit.id)
-            }
-        } else {
-            self.allocate_lane(&commit.id)
-        };
+        // Allocate primary lane for this commit
+        let primary_lane = self.allocate_lane(&commit.id);
 
         // Build lanes for this row
         let mut lanes = vec![Lane::Empty; self.max_lanes];
 
-        // Handle different commit types
-        match commit.parents.len() {
-            0 => {
-                // Root commit
-                lanes[primary_lane] = Lane::Commit;
-            }
-            1 => {
-                // Single parent - linear or branch
-                let parent_lane = self.get_or_allocate_lane(&commit.parents[0]);
+        // Set the commit node
+        lanes[primary_lane] = Lane::Commit;
 
-                if parent_lane == primary_lane {
-                    // Linear continuation
-                    lanes[primary_lane] = Lane::Commit;
-                } else {
-                    // Branch from parent
-                    lanes[primary_lane] = Lane::BranchStart;
-                    if parent_lane < self.max_lanes {
-                        lanes[parent_lane] = Lane::Pass;
+        // Mark passing lanes for active commits
+        for (&ref commit_id, &lane_idx) in &self.active_lanes {
+            if commit_id != &commit.id && lane_idx < self.max_lanes {
+                // If this lane is active and not the current commit, it passes through
+                if lanes[lane_idx] == Lane::Empty {
+                    lanes[lane_idx] = Lane::Pass;
+                }
+            }
+        }
+
+        // Handle parent connections
+        if !commit.parents.is_empty() {
+            // For each parent, ensure they have a lane allocated
+            for parent_id in &commit.parents {
+                if !self.active_lanes.contains_key(parent_id) {
+                    // Parent needs a lane for future rows
+                    let parent_lane = self.allocate_lane(parent_id);
+
+                    // If parent is in a different lane, show branch
+                    if parent_lane != primary_lane && parent_lane < self.max_lanes {
+                        // Mark the connection
+                        if commit.parents.len() > 1 {
+                            // Merge from multiple parents
+                            lanes[primary_lane] = Lane::Merge(vec![parent_lane]);
+                        } else if lanes[parent_lane] == Lane::Empty {
+                            // Branch to parent
+                            lanes[parent_lane] = Lane::Pass;
+                        }
                     }
                 }
             }
-            _ => {
-                // Merge commit
-                let mut target_lanes = Vec::new();
-                for parent_id in &commit.parents {
-                    let parent_lane = self.get_or_allocate_lane(parent_id);
-                    target_lanes.push(parent_lane);
-                }
-                lanes[primary_lane] = Lane::Merge(target_lanes);
-            }
         }
 
-        // Mark passing lanes
-        for (&ref commit_id, &lane_idx) in &self.active_lanes {
-            if lane_idx != primary_lane &&
-               commit_id != &commit.id &&
-               lane_idx < self.max_lanes &&
-               lanes[lane_idx] == Lane::Empty {
-                lanes[lane_idx] = Lane::Pass;
-            }
-        }
-
-        // Check for branch end
+        // Check if this is a branch point (has multiple children)
         let children = dag.get_children(&commit.id);
-        if children.is_empty() {
+        if children.len() > 1 {
+            // This commit branches out
+            lanes[primary_lane] = Lane::BranchStart;
+        }
+
+        // Check for end of branch
+        if children.is_empty() && commit.parents.is_empty() {
+            // This is a root commit with no children
             lanes[primary_lane] = Lane::End;
-            self.schedule_lane_free(&commit.id, row_idx);
         }
 
         Row {
