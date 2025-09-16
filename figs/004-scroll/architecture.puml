@@ -1,0 +1,69 @@
+@startuml architecture
+title Commit 04: Viewport Virtualization Architecture
+
+skinparam shadowing false
+skinparam rectangle {
+  roundCorner 12
+}
+
+package "Viewport System" as ViewportSys {
+  class Viewport {
+    +top: usize
+    +height: usize
+    +cursor: usize
+    +total_rows: usize
+    --
+    +visible_range(): (usize, usize)
+    +is_visible(row_idx): bool
+    +scroll_up(n: usize)
+    +scroll_down(n: usize)
+    +page_up()
+    +page_down()
+    +cursor_up()
+    +cursor_down()
+    +jump_to(row_idx: usize)
+    +center_on_cursor()
+    +progress(): f32
+  }
+
+  class VirtualRenderer {
+    -viewport: Viewport
+    -renderer: TuiRenderer
+    -rows: Vec<Row>
+    --
+    +new(rows, height, width): Self
+    +render(): String
+    +handle_input(key: char): bool
+    +resize(new_height: usize)
+  }
+}
+
+package "Render" as Render {
+  class TuiRenderer
+}
+
+package "Layout" as Layout {
+  class Row
+}
+
+VirtualRenderer *-- Viewport : manages
+VirtualRenderer --> TuiRenderer : uses
+VirtualRenderer --> Row : renders subset
+
+note right of Viewport
+  Virtualization benefits:
+  - O(viewport) rendering
+  - Smooth scrolling
+  - Low memory for display
+  - Handles large repos
+end note
+
+note bottom of VirtualRenderer
+  Key bindings:
+  j/k - cursor up/down
+  Ctrl-D/U - page down/up
+  g/G - top/bottom
+  z - center cursor
+end note
+
+@enduml

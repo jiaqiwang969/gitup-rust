@@ -1,0 +1,83 @@
+@startuml algorithm_flow
+title Commit 04: Viewport Scrolling Algorithm
+
+start
+
+:Initialize Viewport;
+note right
+  top = 0
+  height = terminal_height
+  cursor = 0
+  total_rows = rows.len()
+end note
+
+partition "Render Cycle" {
+  :Calculate visible range;
+  note left
+    start = viewport.top
+    end = min(top + height, total)
+  end note
+
+  :Extract visible rows;
+  note right: rows[start..end]
+
+  partition "For each visible row" {
+    :Get row index;
+
+    if (Is cursor row?) then (yes)
+      :Apply highlight/reverse;
+    endif
+
+    :Render row cells;
+    :Add commit info;
+  }
+
+  :Add status line;
+  note left
+    [cursor/total] progress%
+    Navigation hints
+  end note
+}
+
+partition "Handle Input" {
+  :Read key press;
+
+  switch (Key)
+  case (j / arrow down)
+    :cursor_down();
+    if (Cursor below viewport?) then (yes)
+      :Auto-scroll down;
+    endif
+  case (k / arrow up)
+    :cursor_up();
+    if (Cursor above viewport?) then (yes)
+      :Auto-scroll up;
+    endif
+  case (Ctrl-D)
+    :Page down;
+    note right: scroll by height
+  case (Ctrl-U)
+    :Page up;
+  case (g)
+    :Jump to top;
+  case (G)
+    :Jump to bottom;
+  case (z)
+    :Center on cursor;
+  case (q)
+    :Exit;
+    stop
+  endswitch
+
+  :Clamp values;
+  note right
+    top <= total - height
+    cursor < total
+  end note
+}
+
+:Re-render;
+
+stop
+
+@enduml
