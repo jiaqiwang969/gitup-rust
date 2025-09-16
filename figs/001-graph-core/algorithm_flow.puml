@@ -1,0 +1,55 @@
+@startuml algorithm_flow
+title Commit 01: DAG Building Algorithm Flow
+
+start
+
+:Open Git Repository;
+note right: git2::Repository::open()
+
+:Initialize RevWalk;
+note right: Set TOPOLOGICAL | TIME sorting
+
+:Push HEAD and all branches;
+
+while (More commits?) is (yes)
+  :Fetch next commit;
+
+  :Extract commit data;
+  note left
+    - ID (SHA)
+    - Parent IDs
+    - Timestamp
+    - Author
+    - Message
+  end note
+
+  :Create CommitNode;
+
+  if (Has parents?) then (yes)
+    if (Multiple parents?) then (yes)
+      :Create Merge edges;
+    else (no)
+      :Create Regular edge;
+    endif
+  endif
+
+  :Add node to DAG;
+  :Update children map;
+
+  if (Limit reached?) then (yes)
+    break
+  endif
+endwhile (no)
+
+:Calculate DAG statistics;
+note right
+  - Total commits/edges
+  - Merge/root/leaf counts
+  - Orphan branch detection
+end note
+
+:Return DAG;
+
+stop
+
+@enduml

@@ -8,13 +8,15 @@ members = [
     "gitup-core",
     "gitup-ui",
     "gitup-tui",
-    "gitup-ffi"
+    "gitup-ffi",
+    "graph"
 ]
 
 [dependencies]
 gitup-core = { path = "gitup-core" }
 gitup-ui = { path = "gitup-ui" }
 gitup-ffi = { path = "gitup-ffi" }
+graph = { path = "graph" }
 
 # CLI
 clap = { version = "4.5", features = ["derive"] }

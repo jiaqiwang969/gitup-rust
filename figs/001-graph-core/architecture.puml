@@ -1,0 +1,82 @@
+@startuml architecture
+title Commit 01: Graph Core DAG Architecture
+
+skinparam shadowing false
+skinparam rectangle {
+  roundCorner 12
+}
+
+package "Graph Core" as GraphCore {
+  class CommitNode {
+    +id: String
+    +parents: Vec<String>
+    +timestamp: DateTime<Utc>
+    +author: String
+    +message: String
+    --
+    +is_root(): bool
+    +is_merge(): bool
+  }
+
+  class Edge {
+    +from: String
+    +to: String
+    +edge_type: EdgeType
+  }
+
+  enum EdgeType {
+    Regular
+    Merge
+    CherryPick
+  }
+
+  class Dag {
+    +nodes: HashMap<String, CommitNode>
+    +edges: Vec<Edge>
+    +children: HashMap<String, Vec<String>>
+    --
+    +add_node(node: CommitNode)
+    +roots(): Vec<&CommitNode>
+    +leaves(): Vec<&CommitNode>
+    +get_children(id: &str): Vec<&CommitNode>
+    +get_parents(id: &str): Vec<&CommitNode>
+    +stats(): DagStats
+  }
+
+  class DagStats {
+    +total_commits: usize
+    +total_edges: usize
+    +merge_commits: usize
+    +root_commits: usize
+    +leaf_commits: usize
+    +has_orphans: bool
+  }
+}
+
+package "Git Backend" as GitBackend {
+  class GitWalker {
+    -repo: Repository
+    --
+    +new(path: Option<&str>): Result<Self>
+    +into_dag(limit: Option<usize>): Result<Dag>
+    +get_refs(): Result<Vec<(String, String)>>
+    +get_head(): Result<Option<String>>
+    -commit_to_node(commit: &Commit): Result<CommitNode>
+  }
+}
+
+package "External" as Ext {
+  interface git2::Repository
+  interface git2::Commit
+}
+
+Dag *-- CommitNode : contains
+Dag *-- Edge : contains
+Edge --> EdgeType : uses
+Dag --> DagStats : generates
+
+GitWalker --> Dag : creates
+GitWalker --> CommitNode : creates
+GitWalker ..> Ext : uses
+
+@enduml

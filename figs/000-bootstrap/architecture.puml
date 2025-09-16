@@ -1,0 +1,47 @@
+@startuml architecture
+title gitup-rust (current modules) - Architecture Overview
+
+skinparam shadowing false
+skinparam rectangle {
+  roundCorner 12
+}
+
+package "UI (TUI)" as UI {
+  [CommitTab] as CommitTab
+  [BranchTab] as BranchTab
+  [StatusView] as StatusView
+}
+
+package "Graph/View Layer" as View {
+  [GraphController] as GraphCtl
+  [LayoutEngine] as Layout
+  [RenderBackend] as Render
+}
+
+package "Git Backend" as Git {
+  [Repo] as Repo
+  [CommitWalker] as Walker
+  [Refs/Branches] as Refs
+}
+
+package "Infra" as Infra {
+  [Config]
+  [Logging]
+  [CmdBus/EventBus] as Bus
+}
+
+UI -down-> GraphCtl : user actions\n(key/mouse)
+GraphCtl -down-> Layout : request layout\n(dag nodes/edges)
+Layout -down-> Render : frame primitives\n(rows, lanes, arcs)
+Render -up-> CommitTab : draw cells\n(char grid, box drawing)
+
+GraphCtl -left-> Walker : fetch DAG\n(commits, parents)
+Walker -left-> Repo : libgit2/git2-rs ops
+Walker -down-> Refs : resolve HEAD/branches/tags
+
+UI -right-> Bus : dispatch
+Bus -right-> UI : publish state changes
+
+Infra -down-> Render
+Infra -down-> Repo
+@enduml
