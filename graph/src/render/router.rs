@@ -1,5 +1,30 @@
 use std::collections::HashMap;
 
+/// Lane type with priority hints
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LaneType {
+    MainTrunk,      // Primary branch (e.g., main/master) - highest priority
+    ActiveBranch,   // Currently checked out branch
+    FeatureBranch,  // Regular feature branch
+    ReleaseBranch,  // Release/hotfix branch
+    RemoteBranch,   // Remote tracking branch
+    Detached,       // Detached HEAD or orphan
+}
+
+impl LaneType {
+    /// Get base priority for this lane type (higher = more important)
+    pub fn priority(&self) -> u8 {
+        match self {
+            LaneType::MainTrunk => 20,
+            LaneType::ActiveBranch => 18,
+            LaneType::ReleaseBranch => 15,
+            LaneType::FeatureBranch => 10,
+            LaneType::RemoteBranch => 8,
+            LaneType::Detached => 5,
+        }
+    }
+}
+
 /// Direction of line entering a cell
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum EntryDir {
@@ -154,47 +179,120 @@ impl CellRouter {
         self.insert(EntryDir::South, ExitDir::West, ch, priority, fallback);
     }
 
-    /// Route a cell with multiple potential paths
-    pub fn route_cell(&self, entries: &[EntryDir], exits: &[ExitDir]) -> char {
+    /// Route a cell with multiple potential paths and lane priorities
+    pub fn route_cell_with_priority(
+        &self,
+        entries: &[(EntryDir, LaneType)],
+        exits: &[(ExitDir, LaneType)],
+        prefer_straight: bool,
+    ) -> char {
         let mut best_char = ' ';
-        let mut best_priority = 0u8;
+        let mut best_score = 0u32;
 
-        // Try all combinations
-        for entry in entries {
-            for exit in exits {
-                if let Some(decision) = self.char_table.get(&(*entry, *exit)) {
-                    if decision.priority > best_priority {
-                        best_priority = decision.priority;
+        // Calculate scores for each combination
+        for (entry_dir, entry_lane) in entries {
+            for (exit_dir, exit_lane) in exits {
+                if let Some(decision) = self.char_table.get(&(*entry_dir, *exit_dir)) {
+                    // Score = base priority + lane priority bonus + straight line bonus
+                    let mut score = decision.priority as u32 * 100;
+
+                    // Add lane type priorities
+                    score += entry_lane.priority() as u32 * 10;
+                    score += exit_lane.priority() as u32 * 10;
+
+                    // Bonus for maintaining straight lines on main trunk
+                    if prefer_straight && entry_lane == exit_lane {
+                        if *entry_dir == EntryDir::North && *exit_dir == ExitDir::South {
+                            score += 50; // Vertical straight bonus
+                        } else if *entry_dir == EntryDir::West && *exit_dir == ExitDir::East {
+                            score += 50; // Horizontal straight bonus
+                        }
+                    }
+
+                    // Main trunk always gets straight path priority
+                    if *entry_lane == LaneType::MainTrunk && *exit_lane == LaneType::MainTrunk {
+                        score += 100;
+                    }
+
+                    if score > best_score {
+                        best_score = score;
                         best_char = decision.character;
                     }
                 }
             }
         }
 
-        // Fallback logic for common patterns
+        // Enhanced fallback logic
         if best_char == ' ' {
-            if !entries.is_empty() && !exits.is_empty() {
-                // Default to cross if multiple paths
-                best_char = match self.profile {
-                    CharsetProfile::Utf8Rounded | CharsetProfile::Utf8Straight => '┼',
-                    CharsetProfile::Ascii => '+',
-                };
-            } else if entries.contains(&EntryDir::North) || exits.contains(&ExitDir::South) {
-                // Vertical line
-                best_char = match self.profile {
-                    CharsetProfile::Utf8Rounded | CharsetProfile::Utf8Straight => '│',
-                    CharsetProfile::Ascii => '|',
-                };
-            } else if entries.contains(&EntryDir::East) || exits.contains(&ExitDir::West) {
-                // Horizontal line
-                best_char = match self.profile {
-                    CharsetProfile::Utf8Rounded | CharsetProfile::Utf8Straight => '─',
-                    CharsetProfile::Ascii => '-',
-                };
-            }
+            best_char = self.select_fallback_char(entries, exits);
         }
 
         best_char
+    }
+
+    /// Select fallback character when no exact match found
+    fn select_fallback_char(
+        &self,
+        entries: &[(EntryDir, LaneType)],
+        exits: &[(ExitDir, LaneType)],
+    ) -> char {
+        // Check if we have main trunk
+        let has_main_trunk = entries.iter().any(|(_, lt)| *lt == LaneType::MainTrunk)
+            || exits.iter().any(|(_, lt)| *lt == LaneType::MainTrunk);
+
+        // Count directions
+        let has_north = entries.iter().any(|(d, _)| *d == EntryDir::North);
+        let has_south = exits.iter().any(|(d, _)| *d == ExitDir::South);
+        let has_east = exits.iter().any(|(d, _)| *d == ExitDir::East);
+        let has_west = entries.iter().any(|(d, _)| *d == EntryDir::West);
+
+        // Decision matrix
+        match (has_north || has_south, has_east || has_west, has_main_trunk) {
+            (true, true, true) => {
+                // Main trunk at junction - prefer T-junction over cross
+                match self.profile {
+                    CharsetProfile::Utf8Rounded | CharsetProfile::Utf8Straight => '├',
+                    CharsetProfile::Ascii => '+',
+                }
+            }
+            (true, true, false) => {
+                // Regular cross
+                match self.profile {
+                    CharsetProfile::Utf8Rounded | CharsetProfile::Utf8Straight => '┼',
+                    CharsetProfile::Ascii => '+',
+                }
+            }
+            (true, false, _) => {
+                // Vertical line
+                match self.profile {
+                    CharsetProfile::Utf8Rounded | CharsetProfile::Utf8Straight => '│',
+                    CharsetProfile::Ascii => '|',
+                }
+            }
+            (false, true, _) => {
+                // Horizontal line
+                match self.profile {
+                    CharsetProfile::Utf8Rounded | CharsetProfile::Utf8Straight => '─',
+                    CharsetProfile::Ascii => '-',
+                }
+            }
+            _ => ' ',
+        }
+    }
+
+    /// Route a cell with multiple potential paths (compatibility method)
+    pub fn route_cell(&self, entries: &[EntryDir], exits: &[ExitDir]) -> char {
+        // Convert to new format with default lane type
+        let entries_with_lane: Vec<(EntryDir, LaneType)> = entries
+            .iter()
+            .map(|&dir| (dir, LaneType::FeatureBranch))
+            .collect();
+        let exits_with_lane: Vec<(ExitDir, LaneType)> = exits
+            .iter()
+            .map(|&dir| (dir, LaneType::FeatureBranch))
+            .collect();
+
+        self.route_cell_with_priority(&entries_with_lane, &exits_with_lane, false)
     }
 
     /// Get fallback character for a given character

@@ -10,6 +10,6 @@ pub use render::{
     TuiRenderer, AsciiRenderer, Cell, Color,
     Viewport, VirtualRenderer,
     ViewportCarryOver, SeamlessViewport, ColumnState, EnteringType,
-    CellRouter, ConflictResolver, CharsetProfile, EntryDir, ExitDir,
+    CellRouter, ConflictResolver, CharsetProfile, EntryDir, ExitDir, LaneType,
     TextLayout, CjkMode, Alignment, CommitMessageFormatter,
 };
