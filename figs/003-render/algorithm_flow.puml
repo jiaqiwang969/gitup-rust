@@ -1,0 +1,73 @@
+@startuml algorithm_flow
+title Commit 03: Rendering Algorithm Flow
+
+start
+
+:Initialize Renderer;
+note right
+  graph_width = terminal_width / 2
+  lane_colors = [Blue, Green, Red, ...]
+end note
+
+partition "Render Single Row" {
+  :Create empty cell grid;
+  note left: Width = graph_width * 2
+
+  partition "For each lane" {
+    :Get lane type and index;
+    :Calculate position;
+    note right: pos = lane_idx * 2
+
+    switch (Lane type)
+    case (Empty)
+      :Set cells to spaces;
+    case (Pass)
+      :Set vertical line │;
+    case (Commit)
+      if (Primary lane?) then (yes)
+        :Set filled commit ●;
+      else (no)
+        :Set empty commit ○;
+      endif
+    case (BranchStart)
+      :Set branch chars ┌─;
+    case (Merge)
+      :Set merge chars ┤─;
+      :Draw lines to targets;
+    case (End)
+      :Set end char └;
+    endswitch
+
+    :Apply lane color;
+  }
+
+  :Return cell grid;
+}
+
+partition "Render Multiple Rows" {
+  :Initialize string buffer;
+
+  partition "For each row" {
+    :Render row to cells;
+
+    partition "For each cell" {
+      :Add ANSI color code;
+      :Add character;
+    }
+
+    :Reset color;
+    :Add commit info;
+    note right
+      - Commit ID (8 chars)
+      - Commit message
+    end note
+
+    :Add newline;
+  }
+
+  :Return formatted string;
+}
+
+stop
+
+@enduml

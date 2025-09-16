@@ -38,6 +38,10 @@ tokio = { version = "1.40", features = ["full"] }
 name = "gitup"
 path = "src/main.rs"
 
+[[bin]]
+name = "demo_graph"
+path = "src/demo_graph.rs"
+
 [profile.release]
 opt-level = 3
 lto = true

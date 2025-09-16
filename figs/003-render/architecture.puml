@@ -1,0 +1,82 @@
+@startuml architecture
+title Commit 03: TUI Rendering Architecture
+
+skinparam shadowing false
+skinparam rectangle {
+  roundCorner 12
+}
+
+package "Render Module" as Render {
+  class TuiRenderer {
+    -graph_width: usize
+    -lane_colors: Vec<Color>
+    --
+    +new(graph_width: usize): Self
+    +render_row(row: &Row): Vec<Cell>
+    +render_rows(rows: &[Row], limit: Option<usize>): String
+  }
+
+  class AsciiRenderer {
+    -graph_width: usize
+    --
+    +new(graph_width: usize): Self
+    +render_row(row: &Row): String
+  }
+
+  class Cell {
+    +ch: char
+    +color: Color
+    --
+    +new(ch: char, color: Color): Self
+    +empty(): Self
+  }
+
+  enum Color {
+    Default
+    Red
+    Green
+    Yellow
+    Blue
+    Magenta
+    Cyan
+    White
+    --
+    +to_ansi(): &str
+  }
+
+  class "chars" as BoxChars <<(M,orchid)module>> {
+    VERTICAL: '│'
+    HORIZONTAL: '─'
+    COMMIT: '●'
+    BRANCH_UP_RIGHT: '┌'
+    MERGE_LEFT: '┤'
+    ...
+  }
+}
+
+package "Layout" as Layout {
+  class Row
+  enum Lane
+}
+
+TuiRenderer --> Cell : creates
+TuiRenderer --> Color : uses
+TuiRenderer ..> BoxChars : uses
+Cell --> Color : contains
+
+AsciiRenderer ..> Row : renders
+TuiRenderer ..> Row : renders
+
+note right of TuiRenderer
+  - Color support via ANSI codes
+  - Box drawing characters
+  - 2 chars per lane width
+end note
+
+note right of AsciiRenderer
+  - ASCII-only fallback
+  - No color codes
+  - Simple | * - characters
+end note
+
+@enduml
