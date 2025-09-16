@@ -101,7 +101,7 @@ impl<'a> Widget for AdvancedGraphWidget<'a> {
                 let col = if is_head { Color::Green } else { self.color_for_node(&prow.commit_id) };
                 cell.set_style(Style::default().fg(col));
 
-                // 3) draw text summary to the right of max lanes
+                // 3) draw text summary to the right of max lanes with proper CJK handling
                 let lanes_width = self.lane_node_x(area, self.graph.lanes.len().saturating_sub(1)) + 1 - area.x;
                 let text_x = area.x + lanes_width + 2;
                 if text_x < area.x + area.width {
@@ -110,13 +110,47 @@ impl<'a> Widget for AdvancedGraphWidget<'a> {
                     // find message
                     let message = self.graph.nodes.iter().find(|n| n.id == prow.commit_id)
                         .map(|n| n.message.as_str()).unwrap_or("");
+
+                    // Format and truncate text with proper CJK handling
                     let text = format!("{} {}", short, message);
+                    let available_width = (area.width - (text_x - area.x)) as usize;
+
+                    // Use grapheme clusters for proper text handling
+                    use unicode_segmentation::UnicodeSegmentation;
+                    use unicode_width::UnicodeWidthStr;
+
                     let mut x = text_x;
-                    for ch in text.chars() {
-                        if x >= area.x + area.width { break; }
-                        let c = buf.get_mut(x, screen_y);
-                        c.set_char(ch);
-                        x += 1;
+                    let mut width_used = 0;
+
+                    for grapheme in text.graphemes(true) {
+                        // Calculate the display width of this grapheme
+                        let width = UnicodeWidthStr::width(grapheme);
+
+                        // Check if we have space for this grapheme
+                        if width_used + width > available_width {
+                            break;
+                        }
+
+                        // For multi-width characters (CJK, emoji), handle carefully
+                        if width > 0 {
+                            // Get the first character of the grapheme for rendering
+                            if let Some(ch) = grapheme.chars().next() {
+                                if x < area.x + area.width {
+                                    let c = buf.get_mut(x, screen_y);
+                                    c.set_char(ch);
+
+                                    // For wide characters, skip the next cell
+                                    if width == 2 && x + 1 < area.x + area.width {
+                                        // Mark the next cell as continuation of wide char
+                                        let c_next = buf.get_mut(x + 1, screen_y);
+                                        c_next.set_char(' '); // Use space as placeholder
+                                    }
+
+                                    x += width as u16;
+                                    width_used += width;
+                                }
+                            }
+                        }
                     }
                 }
             }

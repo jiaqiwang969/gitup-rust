@@ -11,6 +11,10 @@ graph = { path = "../graph" }
 ratatui = "0.28"  # For terminal UI
 crossterm = "0.28"
 
+# Unicode handling for CJK text
+unicode-width = "0.2"
+unicode-segmentation = "1.11"
+
 # Utils
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
