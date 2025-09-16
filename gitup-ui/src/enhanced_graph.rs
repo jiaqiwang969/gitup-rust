@@ -122,7 +122,7 @@ impl EnhancedGraphIntegration {
                 x += 1;
             }
 
-            // Draw commit info (SHA + message)
+            // Draw commit info (SHA + message) with proper CJK handling
             let info_x = area.x + (area.width / 3).min(24);
             if info_x < area.x + area.width {
                 let sha = &row.commit_id[..8.min(row.commit_id.len())];
@@ -131,8 +131,22 @@ impl EnhancedGraphIntegration {
                 let info_width = (area.width - (info_x - area.x)) as usize;
                 let formatted = self.formatter.format(sha, message, info_width);
 
-                for (i, ch) in formatted.chars().enumerate() {
-                    let x = info_x + i as u16;
+                // Use Unicode-aware rendering for CJK text
+                use unicode_segmentation::UnicodeSegmentation;
+                use unicode_width::UnicodeWidthStr;
+
+                let mut x = info_x;
+                let mut width_used = 0;
+
+                for grapheme in formatted.graphemes(true) {
+                    // Calculate display width
+                    let width = UnicodeWidthStr::width(grapheme);
+
+                    // Check if we have space
+                    if width_used + width > info_width {
+                        break;
+                    }
+
                     if x >= area.x + area.width {
                         break;
                     }
@@ -144,8 +158,25 @@ impl EnhancedGraphIntegration {
                         Style::default()
                     };
 
-                    let buf_cell = &mut buf[(x, y)];
-                    buf_cell.set_char(ch).set_style(style);
+                    // Render the grapheme
+                    if width > 0 {
+                        if let Some(ch) = grapheme.chars().next() {
+                            if x < area.x + area.width {
+                                let buf_cell = &mut buf[(x, y)];
+                                buf_cell.set_char(ch).set_style(style);
+
+                                // For wide characters (CJK, emoji), handle the next cell
+                                if width == 2 && x + 1 < area.x + area.width {
+                                    // Clear the next cell for wide character continuation
+                                    let buf_cell_next = &mut buf[(x + 1, y)];
+                                    buf_cell_next.set_char(' ');
+                                }
+
+                                x += width as u16;
+                                width_used += width;
+                            }
+                        }
+                    }
                 }
             }
         }
