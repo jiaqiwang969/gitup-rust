@@ -1,0 +1,66 @@
+@startuml architecture
+title Commit 02: Layout Row Builder Architecture
+
+skinparam shadowing false
+skinparam rectangle {
+  roundCorner 12
+}
+
+package "Layout Module" as Layout {
+  class RowBuilder {
+    -max_lanes: usize
+    -active_branches: HashMap<String, LaneIdx>
+    -next_lane: LaneIdx
+    --
+    +new(max_lanes: usize): Self
+    +build_rows(dag: &Dag): Vec<Row>
+    -build_row(commit: &CommitNode, dag: &Dag): Row
+    -assign_lane(commit_id: &str): LaneIdx
+    -topological_sort(dag: &Dag): Vec<&CommitNode>
+  }
+
+  class Row {
+    +commit_id: String
+    +commit: CommitNode
+    +lanes: Vec<Lane>
+    +primary_lane: LaneIdx
+  }
+
+  enum Lane {
+    Empty
+    Pass
+    Commit
+    BranchStart
+    Merge(Vec<LaneIdx>)
+    End
+  }
+}
+
+package "Core" as Core {
+  class Dag
+  class CommitNode
+}
+
+RowBuilder --> Row : creates
+Row *-- Lane : contains
+Row --> CommitNode : references
+RowBuilder ..> Dag : uses
+RowBuilder ..> CommitNode : processes
+
+note right of RowBuilder
+  No lane compression yet
+  Simple incremental assignment
+  Preserves full width
+end note
+
+note right of Lane
+  Visual elements:
+  - Empty: no line
+  - Pass: │ vertical
+  - Commit: • node
+  - BranchStart: ┌ fork
+  - Merge: ┤ join
+  - End: ┘ terminate
+end note
+
+@enduml
