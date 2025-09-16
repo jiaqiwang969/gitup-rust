@@ -7,6 +7,7 @@ use crossterm::{
 use gitup_core::{Repository, CommitInfo, BranchInfo, CommitFileStatus, StatusType};
 use crate::simple_graph::{SimpleGraph, SimpleGraphWidget};
 use crate::graph::{engine::GraphEngine, row_edges::{RowEdgesBuilder, ProcessedRow}, widget::AdvancedGraphWidget, types::GitGraph};
+use crate::enhanced_graph::EnhancedGraphIntegration;
 use crate::events::{bus::EventBus, debounce::EventDebouncer, types::GraphEvent};
 #[cfg(feature = "watch")]
 use crate::events::watcher::GitWatcher;
@@ -81,6 +82,10 @@ pub struct App {
     #[cfg(feature = "watch")]
     pub graph_watcher: Option<GitWatcher>,
 
+    // Enhanced graph integration
+    pub enhanced_graph: Option<EnhancedGraphIntegration>,
+    pub use_enhanced_graph: bool,
+
     // Vim mode support
     pub vim_mode: VimMode,
     pub command_buffer: String,
@@ -144,6 +149,10 @@ impl App {
             debouncer: EventDebouncer::new(Duration::from_millis(200)),
             #[cfg(feature = "watch")]
             graph_watcher: None,
+
+            // Enhanced graph integration
+            enhanced_graph: None,  // Will be initialized on first use
+            use_enhanced_graph: false,  // Can be toggled with 'E' key
 
             // Initialize Vim mode
             vim_mode: VimMode::Normal,
@@ -779,6 +788,11 @@ fn handle_normal_mode(app: &mut App, key: crossterm::event::KeyEvent) {
             for _ in 0..count {
                 if app.current_tab == 3 {
                     app.scroll_down(1);
+                } else if app.use_enhanced_graph && app.current_tab == 0 {
+                    // Handle enhanced graph navigation
+                    if let Some(graph) = app.enhanced_graph.as_mut() {
+                        graph.handle_input(crossterm::event::KeyCode::Down);
+                    }
                 } else {
                     app.next_item();
                 }
@@ -789,6 +803,11 @@ fn handle_normal_mode(app: &mut App, key: crossterm::event::KeyEvent) {
             for _ in 0..count {
                 if app.current_tab == 3 {
                     app.scroll_up(1);
+                } else if app.use_enhanced_graph && app.current_tab == 0 {
+                    // Handle enhanced graph navigation
+                    if let Some(graph) = app.enhanced_graph.as_mut() {
+                        graph.handle_input(crossterm::event::KeyCode::Up);
+                    }
                 } else {
                     app.previous_item();
                 }
@@ -998,6 +1017,20 @@ fn handle_normal_mode(app: &mut App, key: crossterm::event::KeyEvent) {
             app.graph_ascii = !app.graph_ascii;
             app.message = Some((format!("Graph ASCII: {}", if app.graph_ascii { "ON" } else { "OFF" }), Instant::now()));
         }
+        // Toggle enhanced graph
+        KeyCode::Char('E') if app.current_tab == 0 => {
+            app.use_enhanced_graph = !app.use_enhanced_graph;
+            if app.use_enhanced_graph && app.enhanced_graph.is_none() {
+                // Initialize enhanced graph on first use
+                if let Ok(graph) = EnhancedGraphIntegration::new(".") {
+                    app.enhanced_graph = Some(graph);
+                }
+            }
+            app.message = Some((
+                format!("Enhanced Graph: {}", if app.use_enhanced_graph { "ON" } else { "OFF" }),
+                Instant::now()
+            ));
+        }
         // Toggle watcher (if built with feature)
         KeyCode::Char('w') if app.current_tab == 0 => {
             #[cfg(feature = "watch")]
@@ -1057,20 +1090,48 @@ fn handle_normal_mode(app: &mut App, key: crossterm::event::KeyEvent) {
 
         // Page navigation
         KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-            if app.current_tab == 3 { app.scroll_down(10); }
-            else if app.current_tab == 0 && app.show_graph { app.graph_page_down(); }
+            if app.current_tab == 3 {
+                app.scroll_down(10);
+            } else if app.use_enhanced_graph && app.current_tab == 0 {
+                if let Some(graph) = app.enhanced_graph.as_mut() {
+                    graph.handle_input(crossterm::event::KeyCode::PageDown);
+                }
+            } else if app.current_tab == 0 && app.show_graph {
+                app.graph_page_down();
+            }
         }
         KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-            if app.current_tab == 3 { app.scroll_up(10); }
-            else if app.current_tab == 0 && app.show_graph { app.graph_page_up(); }
+            if app.current_tab == 3 {
+                app.scroll_up(10);
+            } else if app.use_enhanced_graph && app.current_tab == 0 {
+                if let Some(graph) = app.enhanced_graph.as_mut() {
+                    graph.handle_input(crossterm::event::KeyCode::PageUp);
+                }
+            } else if app.current_tab == 0 && app.show_graph {
+                app.graph_page_up();
+            }
         }
         KeyCode::Char('f') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-            if app.current_tab == 3 { app.scroll_down(20); }
-            else if app.current_tab == 0 && app.show_graph { app.graph_page_down(); }
+            if app.current_tab == 3 {
+                app.scroll_down(20);
+            } else if app.use_enhanced_graph && app.current_tab == 0 {
+                if let Some(graph) = app.enhanced_graph.as_mut() {
+                    graph.handle_input(crossterm::event::KeyCode::PageDown);
+                }
+            } else if app.current_tab == 0 && app.show_graph {
+                app.graph_page_down();
+            }
         }
         KeyCode::Char('b') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-            if app.current_tab == 3 { app.scroll_up(20); }
-            else if app.current_tab == 0 && app.show_graph { app.graph_page_up(); }
+            if app.current_tab == 3 {
+                app.scroll_up(20);
+            } else if app.use_enhanced_graph && app.current_tab == 0 {
+                if let Some(graph) = app.enhanced_graph.as_mut() {
+                    graph.handle_input(crossterm::event::KeyCode::PageUp);
+                }
+            } else if app.current_tab == 0 && app.show_graph {
+                app.graph_page_up();
+            }
         }
 
         _ => {}
@@ -1304,6 +1365,22 @@ fn draw_commits_tab(f: &mut Frame, app: &App, area: Rect) {
     // Update viewport height for graph ensure_visible logic
     let app_ptr: *const App = app as *const _; // workaround immut borrow; safe due to single-threaded draw
     unsafe { (*(app_ptr as *mut App)).graph_view_height = area.height as usize; }
+
+    // Use enhanced graph if enabled
+    if app.use_enhanced_graph {
+        if let Some(enhanced_graph) = &app.enhanced_graph {
+            let app_mut = unsafe { &mut *(app_ptr as *mut App) };
+            app_mut.enhanced_graph.as_mut().unwrap().render(area, f.buffer_mut());
+        } else {
+            // Try to initialize enhanced graph
+            let app_mut = unsafe { &mut *(app_ptr as *mut App) };
+            if let Ok(graph) = EnhancedGraphIntegration::new(".") {
+                app_mut.enhanced_graph = Some(graph);
+            }
+        }
+        return;
+    }
+
     if app.show_graph {
         // Advanced graph visualization (experimental)
         if app.graph_data.is_none() {

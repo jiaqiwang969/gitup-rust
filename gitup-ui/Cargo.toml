@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 gitup-core = { path = "../gitup-core" }
+graph = { path = "../graph" }
 
 # Rendering
 ratatui = "0.28"  # For terminal UI

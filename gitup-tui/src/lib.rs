@@ -9,7 +9,9 @@ pub mod watcher;
 pub mod operations;
 pub mod graph;
 pub mod graph_builder;
+pub mod graph_enhanced;
 pub mod app;
+pub mod app_enhanced;
 
 // Re-export main types
 pub use vim::{
