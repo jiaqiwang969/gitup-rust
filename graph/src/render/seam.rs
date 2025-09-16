@@ -1,6 +1,144 @@
 use crate::layout::{Lane, LaneIdx};
 use smallvec::SmallVec;
 
+// Direction bit masks
+const DIR_N: u8 = 0x01;  // North (up)
+const DIR_S: u8 = 0x02;  // South (down)
+const DIR_E: u8 = 0x04;  // East (right)
+const DIR_W: u8 = 0x08;  // West (left)
+const DIR_NE: u8 = 0x10; // Northeast
+const DIR_NW: u8 = 0x20; // Northwest
+const DIR_SE: u8 = 0x40; // Southeast
+const DIR_SW: u8 = 0x80; // Southwest
+
+/// Calculate direction masks for a lane based on its connections
+fn calculate_direction_masks(lane: &Lane, row: &crate::layout::Row, col: usize) -> (u8, u8) {
+    let mut incoming = 0u8;
+    let mut outgoing = 0u8;
+
+    match lane {
+        Lane::Pass => {
+            // Vertical pass-through
+            incoming |= DIR_N;
+            outgoing |= DIR_S;
+        }
+        Lane::Commit => {
+            // Commit node - check for incoming from above
+            incoming |= DIR_N;
+            // Check if continuing down
+            if has_continuation_below(row, col) {
+                outgoing |= DIR_S;
+            }
+        }
+        Lane::BranchStart => {
+            // Branch starting - diagonal connections
+            incoming |= DIR_N;
+            outgoing |= DIR_S | DIR_SE;
+        }
+        Lane::Merge(sources) => {
+            // Multiple incoming lanes
+            incoming |= DIR_N;
+            for &src in sources {
+                if src < col {
+                    incoming |= DIR_NW;
+                } else if src > col {
+                    incoming |= DIR_NE;
+                }
+            }
+            outgoing |= DIR_S;
+        }
+        Lane::End => {
+            // Ending lane
+            incoming |= DIR_N;
+        }
+        Lane::Empty => {
+            // No connections
+        }
+    }
+
+    (incoming, outgoing)
+}
+
+/// Check if a lane continues below (simplified check)
+fn has_continuation_below(row: &crate::layout::Row, col: usize) -> bool {
+    // In a real implementation, we'd check the next row
+    // For now, assume most lanes continue except End
+    !matches!(row.lanes.get(col), Some(Lane::End) | None)
+}
+
+/// Select appropriate glyph based on direction masks
+fn select_glyph_from_dirs(incoming: u8, outgoing: u8, prefer_straight: bool) -> char {
+    // Quick paths for common cases
+    if incoming == DIR_N && outgoing == DIR_S {
+        return '│'; // Straight vertical
+    }
+    if incoming == DIR_W && outgoing == DIR_E {
+        return '─'; // Straight horizontal
+    }
+
+    // Count directions
+    let in_count = incoming.count_ones();
+    let out_count = outgoing.count_ones();
+
+    // Junction detection
+    if in_count > 1 && out_count > 1 {
+        return '┼'; // Cross junction
+    }
+    if in_count > 1 {
+        // Multiple incoming - merge points
+        if incoming & DIR_N != 0 && incoming & (DIR_NE | DIR_NW) != 0 {
+            return '┬'; // Top merge
+        }
+        if incoming & DIR_W != 0 && incoming & DIR_E != 0 {
+            return '┤'; // Side merge
+        }
+    }
+    if out_count > 1 {
+        // Multiple outgoing - branch points
+        if outgoing & DIR_S != 0 && outgoing & (DIR_SE | DIR_SW) != 0 {
+            return '┴'; // Bottom branch
+        }
+        if outgoing & DIR_W != 0 && outgoing & DIR_E != 0 {
+            return '├'; // Side branch
+        }
+    }
+
+    // Corners
+    if incoming & DIR_N != 0 && outgoing & DIR_E != 0 { return '└'; }
+    if incoming & DIR_N != 0 && outgoing & DIR_W != 0 { return '┘'; }
+    if incoming & DIR_S != 0 && outgoing & DIR_E != 0 { return '┌'; }
+    if incoming & DIR_S != 0 && outgoing & DIR_W != 0 { return '┐'; }
+    if incoming & DIR_W != 0 && outgoing & DIR_N != 0 { return '┘'; }
+    if incoming & DIR_W != 0 && outgoing & DIR_S != 0 { return '┐'; }
+    if incoming & DIR_E != 0 && outgoing & DIR_N != 0 { return '└'; }
+    if incoming & DIR_E != 0 && outgoing & DIR_S != 0 { return '┌'; }
+
+    // Default to simple lines
+    if incoming & (DIR_N | DIR_S) != 0 || outgoing & (DIR_N | DIR_S) != 0 {
+        return '│';
+    }
+    if incoming & (DIR_E | DIR_W) != 0 || outgoing & (DIR_E | DIR_W) != 0 {
+        return '─';
+    }
+
+    ' ' // Empty if no connections
+}
+
+/// Check if one glyph should override another (priority system)
+fn should_override(existing: char, new: char) -> bool {
+    // Priority order: junctions > corners > lines > space
+    let priority = |c: char| match c {
+        '┼' | '┬' | '┴' | '├' | '┤' => 4, // Junctions
+        '┌' | '┐' | '└' | '┘' => 3,       // Corners
+        '│' | '─' => 2,                   // Lines
+        '╱' | '╲' => 1,                   // Diagonals
+        ' ' => 0,                          // Space
+        _ => 1,                            // Other
+    };
+
+    priority(new) > priority(existing)
+}
+
 /// Column state carried over from previous row
 #[derive(Debug, Clone, PartialEq)]
 pub struct ColumnState {
@@ -10,6 +148,10 @@ pub struct ColumnState {
     pub entering_type: EnteringType,
     /// Color for this lane
     pub color_idx: usize,
+    /// Direction mask for incoming edges (bitmask: N,S,E,W,NE,NW,SE,SW)
+    pub incoming: u8,
+    /// Direction mask for outgoing edges
+    pub outgoing: u8,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -52,21 +194,30 @@ impl ViewportCarryOver {
                 break;
             }
 
+            // Calculate direction masks based on lane type and connections
+            let (incoming, outgoing) = calculate_direction_masks(lane, row, idx);
+
             let state = match lane {
                 Lane::Pass | Lane::Commit => Some(ColumnState {
                     lane_idx: idx,
                     entering_type: EnteringType::Vertical,
                     color_idx: idx % 6,
+                    incoming,
+                    outgoing,
                 }),
                 Lane::BranchStart => Some(ColumnState {
                     lane_idx: idx,
                     entering_type: EnteringType::DiagonalRight,
                     color_idx: idx % 6,
+                    incoming,
+                    outgoing,
                 }),
                 Lane::Merge(_) => Some(ColumnState {
                     lane_idx: idx,
                     entering_type: EnteringType::Merge,
                     color_idx: idx % 6,
+                    incoming,
+                    outgoing,
                 }),
                 Lane::Empty | Lane::End => None,
             };
@@ -80,7 +231,7 @@ impl ViewportCarryOver {
         }
     }
 
-    /// Apply carry-over to the first visible row
+    /// Apply carry-over to the first visible row with proper glyph selection
     pub fn apply_to_first_row(&self, cells: &mut [crate::render::Cell], width: usize) {
         for (idx, col_state) in self.columns.iter().enumerate() {
             if idx >= width * 2 {
@@ -91,33 +242,30 @@ impl ViewportCarryOver {
                 let pos = idx * 2;
                 let color = crate::render::Color::from_index(state.color_idx);
 
-                // Draw entering lines based on type
-                match state.entering_type {
-                    EnteringType::Vertical => {
-                        // Continue vertical line from above
-                        if pos < cells.len() && cells[pos].ch == ' ' {
-                            cells[pos] = crate::render::Cell::new('│', color);
-                        }
+                // Select proper glyph based on direction masks
+                let glyph = select_glyph_from_dirs(state.incoming, state.outgoing, true);
+
+                // Apply the glyph if position is valid and empty
+                if pos < cells.len() {
+                    // Only override if cell is empty or we have a better glyph
+                    if cells[pos].ch == ' ' || should_override(cells[pos].ch, glyph) {
+                        cells[pos] = crate::render::Cell::new(glyph, color);
                     }
+                }
+
+                // Handle diagonal connections
+                match state.entering_type {
                     EnteringType::DiagonalLeft => {
-                        // Diagonal entering from left above
                         if pos > 0 && pos - 1 < cells.len() {
-                            cells[pos - 1] = crate::render::Cell::new('\\', color);
+                            cells[pos - 1] = crate::render::Cell::new('╲', color);
                         }
                     }
                     EnteringType::DiagonalRight => {
-                        // Diagonal entering from right above
                         if pos + 1 < cells.len() {
-                            cells[pos + 1] = crate::render::Cell::new('/', color);
+                            cells[pos + 1] = crate::render::Cell::new('╱', color);
                         }
                     }
-                    EnteringType::Merge => {
-                        // Complex merge pattern
-                        if pos < cells.len() {
-                            cells[pos] = crate::render::Cell::new('┬', color);
-                        }
-                    }
-                    EnteringType::None => {}
+                    _ => {}
                 }
             }
         }
