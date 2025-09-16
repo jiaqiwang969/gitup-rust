@@ -8,7 +8,7 @@ pub mod merge;
 pub mod rebase;
 pub mod cherry_pick;
 
-pub use repository::{Repository, CommitInfo, BranchInfo};
+pub use repository::{Repository, CommitInfo, BranchInfo, CommitWithParents, RefInfo, RefType};
 pub use diff::{Diff, FileDiff, DiffFile, DiffHunk, DiffLine, DiffStats, FileStatus, LineOrigin};
 pub use commit::{Commit, Status, FileStatus as CommitFileStatus, StatusType};
 pub use remote::{RemoteInfo, RemoteOps, TransferProgress};

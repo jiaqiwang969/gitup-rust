@@ -33,6 +33,33 @@ pub struct BranchInfo {
     pub is_remote: bool,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum RefType {
+    Head,
+    Branch,
+    Remote,
+    Tag,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RefInfo {
+    pub name: String,
+    pub ref_type: RefType,
+    pub is_head: bool,
+    pub is_remote: bool,
+}
+
+/// Commit info with parent relationships for graph building
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CommitWithParents {
+    pub id: String,
+    pub parents: Vec<String>,
+    pub message: String,
+    pub author: String,
+    pub email: String,
+    pub timestamp: i64,
+}
+
 impl Repository {
     /// Open an existing repository
     pub fn open<P: AsRef<Path>>(path: P) -> Result<Self> {
@@ -102,6 +129,7 @@ impl Repository {
     /// Get recent commits
     pub fn get_commits(&self, count: usize) -> Result<Vec<CommitInfo>> {
         let mut revwalk = self.git_repo.revwalk()?;
+        // Default revision walk from HEAD
         revwalk.push_head()?;
 
         let mut commits = Vec::new();
@@ -123,6 +151,107 @@ impl Repository {
         }
 
         Ok(commits)
+    }
+
+    /// Get recent commits with their parent commit ids (topological + time order)
+    pub fn get_commits_with_parents(&self, count: usize) -> Result<Vec<CommitWithParents>> {
+        use git2::Sort;
+
+        let mut revwalk = self.git_repo.revwalk()?;
+        // Ensure stable topology ordering for graph rendering
+        revwalk.set_sorting(Sort::TOPOLOGICAL | Sort::TIME)?;
+        revwalk.push_head()?;
+
+        let mut commits = Vec::new();
+        for (i, oid_res) in revwalk.enumerate() {
+            if i >= count { break; }
+            let oid = oid_res?;
+            let commit = self.git_repo.find_commit(oid)?;
+
+            // Collect parent ids
+            let mut parents = Vec::with_capacity(commit.parent_count() as usize);
+            for p in commit.parents() {
+                parents.push(p.id().to_string());
+            }
+
+            commits.push(CommitWithParents {
+                id: oid.to_string(),
+                parents,
+                message: commit.summary().unwrap_or("").to_string(),
+                author: commit.author().name().unwrap_or("").to_string(),
+                email: commit.author().email().unwrap_or("").to_string(),
+                timestamp: commit.time().seconds(),
+            });
+        }
+
+        Ok(commits)
+    }
+
+    /// List all refs grouped by target OID (hex string)
+    pub fn list_refs_by_oid(&self) -> Result<std::collections::HashMap<String, Vec<RefInfo>>> {
+        use git2::BranchType;
+        use std::collections::HashMap;
+
+        let mut map: HashMap<String, Vec<RefInfo>> = HashMap::new();
+
+        // HEAD
+        if let Ok(head) = self.git_repo.head() {
+            if let Some(target) = head.target() {
+                map.entry(target.to_string()).or_default().push(RefInfo {
+                    name: head.shorthand().unwrap_or("HEAD").to_string(),
+                    ref_type: RefType::Head,
+                    is_head: true,
+                    is_remote: false,
+                });
+            }
+        }
+
+        // Local branches
+        for br in self.git_repo.branches(Some(BranchType::Local))? {
+            let (branch, _) = br?;
+            if let Some(name) = branch.name()? {
+                if let Some(target) = branch.get().target() {
+                    map.entry(target.to_string()).or_default().push(RefInfo {
+                        name: name.to_string(),
+                        ref_type: RefType::Branch,
+                        is_head: false,
+                        is_remote: false,
+                    });
+                }
+            }
+        }
+
+        // Remote branches
+        for br in self.git_repo.branches(Some(BranchType::Remote))? {
+            let (branch, _) = br?;
+            if let Some(name) = branch.name()? {
+                if let Some(target) = branch.get().target() {
+                    map.entry(target.to_string()).or_default().push(RefInfo {
+                        name: name.to_string(),
+                        ref_type: RefType::Remote,
+                        is_head: false,
+                        is_remote: true,
+                    });
+                }
+            }
+        }
+
+        // Tags
+        self.git_repo.tag_foreach(|oid, name| {
+            if let Ok(name_str) = std::str::from_utf8(name) {
+                if let Some(tag_name) = name_str.strip_prefix("refs/tags/") {
+                    map.entry(oid.to_string()).or_default().push(RefInfo {
+                        name: tag_name.to_string(),
+                        ref_type: RefType::Tag,
+                        is_head: false,
+                        is_remote: false,
+                    });
+                }
+            }
+            true
+        })?;
+
+        Ok(map)
     }
 
     /// Create a new branch
@@ -495,6 +624,8 @@ impl Repository {
 mod tests {
     use super::*;
     use tempfile::TempDir;
+    use std::fs;
+    use std::io::Write;
 
     #[test]
     fn test_init_repository() {
@@ -510,5 +641,123 @@ mod tests {
 
         let repo = Repository::open(temp_dir.path()).unwrap();
         assert!(repo.is_clean().unwrap());
+    }
+
+    /// Helper to write a file
+    fn write_file<P: AsRef<std::path::Path>>(p: P, content: &str) {
+        let mut f = fs::File::create(p).unwrap();
+        f.write_all(content.as_bytes()).unwrap();
+    }
+
+    /// Make a commit with a new or updated file
+    fn make_commit(repo: &Repository, workdir: &std::path::Path, name: &str, content: &str, msg: &str) -> String {
+        write_file(workdir.join(name), content);
+        let inner = Commit::new(&repo.git_repo);
+        inner.stage_file(name).unwrap();
+        repo.commit(msg, "Tester", "tester@example.com").unwrap()
+    }
+
+    #[test]
+    fn test_get_commits_with_parents_linear() {
+        let temp_dir = TempDir::new().unwrap();
+        let repo = Repository::init(temp_dir.path()).unwrap();
+
+        // First commit (root)
+        let _c1 = make_commit(&repo, temp_dir.path(), "a.txt", "1", "c1");
+        // Second commit
+        let c2 = make_commit(&repo, temp_dir.path(), "a.txt", "2", "c2");
+
+        let commits = repo.get_commits_with_parents(10).unwrap();
+        assert!(!commits.is_empty());
+        // HEAD first
+        assert_eq!(commits[0].id.len(), 40);
+        assert_eq!(commits[0].message, "c2");
+        // HEAD should have 1 parent in linear history
+        assert_eq!(commits[0].parents.len(), 1);
+        // Root commit should have 0 parents somewhere in the list
+        assert!(commits.iter().any(|c| c.parents.is_empty()));
+    }
+
+    #[test]
+    fn test_get_commits_with_parents_merge() {
+        let temp_dir = TempDir::new().unwrap();
+        let repo = Repository::init(temp_dir.path()).unwrap();
+
+        // c1 on main
+        let _c1 = make_commit(&repo, temp_dir.path(), "f.txt", "1", "c1");
+
+        // create branch feature from HEAD
+        {
+            let git = &repo.git_repo;
+            let head_commit = git.head().unwrap().peel_to_commit().unwrap();
+            git.branch("feature", &head_commit, false).unwrap();
+        }
+
+        // checkout feature
+        repo.checkout_branch("feature").unwrap();
+        let _c2 = make_commit(&repo, temp_dir.path(), "f.txt", "2", "c2-feature");
+
+        // checkout main and add c2m
+        repo.checkout_branch("master").ok(); // some git init default may be "master" or "main"
+        // If master not exist, try "main"
+        if repo.git_repo.find_branch("master", git2::BranchType::Local).is_err() {
+            // attempt to set HEAD symbolic name to main if exists
+            // No-op; continue assuming default branch name
+        }
+        let _c2m = make_commit(&repo, temp_dir.path(), "f.txt", "3", "c2-main");
+
+        // merge feature into current branch (fast-forward or merge)
+        {
+            let git = &repo.git_repo;
+            let mut idx = git.merge_commits(
+                &git.head().unwrap().peel_to_commit().unwrap(),
+                &git.find_branch("feature", git2::BranchType::Local).unwrap().get().peel_to_commit().unwrap(),
+                None,
+            ).unwrap();
+            assert!(idx.has_conflicts() == false);
+            // Write the merge tree
+            let tree_id = idx.write_tree_to(git).unwrap();
+            let tree = git.find_tree(tree_id).unwrap();
+            let sig = git2::Signature::now("Tester", "tester@example.com").unwrap();
+            let head = git.head().unwrap().peel_to_commit().unwrap();
+            let feature = git.find_branch("feature", git2::BranchType::Local).unwrap().get().peel_to_commit().unwrap();
+            let oid = git.commit(Some("HEAD"), &sig, &sig, "merge feature", &tree, &[&head, &feature]).unwrap();
+            assert_eq!(oid.to_string().len(), 40);
+        }
+
+        let commits = repo.get_commits_with_parents(10).unwrap();
+        // At least one merge commit with two parents
+        assert!(commits.iter().any(|c| c.parents.len() >= 2));
+    }
+
+    #[test]
+    fn test_list_refs_by_oid_basic() {
+        let temp_dir = TempDir::new().unwrap();
+        let repo = Repository::init(temp_dir.path()).unwrap();
+
+        // first commit
+        let c1 = make_commit(&repo, temp_dir.path(), "g.txt", "1", "init");
+
+        // create branch 'feature'
+        {
+            let git = &repo.git_repo;
+            let head_commit = git.head().unwrap().peel_to_commit().unwrap();
+            git.branch("feature", &head_commit, false).unwrap();
+        }
+        // create tag 'v1'
+        {
+            let git = &repo.git_repo;
+            let oid = git2::Oid::from_str(&c1).unwrap();
+            let obj = git.find_object(oid, Some(git2::ObjectType::Commit)).unwrap();
+            let sig = git2::Signature::now("Tester", "tester@example.com").unwrap();
+            git.tag("v1", &obj, &sig, "tag v1", false).unwrap();
+        }
+
+        let map = repo.list_refs_by_oid().unwrap();
+        // Should contain at least HEAD entry and tag/branch entries
+        assert!(!map.is_empty());
+        assert!(map.values().flatten().any(|r| r.ref_type == RefType::Head));
+        assert!(map.values().flatten().any(|r| matches!(r.ref_type, RefType::Branch)));
+        assert!(map.values().flatten().any(|r| matches!(r.ref_type, RefType::Tag)));
     }
 }

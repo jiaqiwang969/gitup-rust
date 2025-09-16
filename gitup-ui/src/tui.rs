@@ -6,6 +6,10 @@ use crossterm::{
 };
 use gitup_core::{Repository, CommitInfo, BranchInfo, CommitFileStatus, StatusType};
 use crate::simple_graph::{SimpleGraph, SimpleGraphWidget};
+use crate::graph::{engine::GraphEngine, row_edges::{RowEdgesBuilder, ProcessedRow}, widget::AdvancedGraphWidget, types::GitGraph};
+use crate::events::{bus::EventBus, debounce::EventDebouncer, types::GraphEvent};
+#[cfg(feature = "watch")]
+use crate::events::watcher::GitWatcher;
 use ratatui::{
     backend::{Backend, CrosstermBackend},
     layout::{Alignment, Constraint, Direction, Layout, Rect},
@@ -65,6 +69,17 @@ pub struct App {
     // Graph visualization
     pub show_graph: bool,
     pub simple_graph: SimpleGraph,
+    // Advanced graph cache/state
+    pub graph_data: Option<GitGraph>,
+    pub graph_rows: Vec<ProcessedRow>,
+    pub graph_top: usize,
+    pub graph_view_height: usize,
+    pub graph_ascii: bool,
+    pub graph_watch_enabled: bool,
+    pub event_bus: EventBus,
+    pub debouncer: EventDebouncer,
+    #[cfg(feature = "watch")]
+    pub graph_watcher: Option<GitWatcher>,
 
     // Vim mode support
     pub vim_mode: VimMode,
@@ -119,6 +134,16 @@ impl App {
             // Graph visualization
             show_graph: false,
             simple_graph: SimpleGraph::new(),
+            graph_data: None,
+            graph_rows: Vec::new(),
+            graph_top: 0,
+            graph_view_height: 0,
+            graph_ascii: false,
+            graph_watch_enabled: false,
+            event_bus: EventBus::new(),
+            debouncer: EventDebouncer::new(Duration::from_millis(200)),
+            #[cfg(feature = "watch")]
+            graph_watcher: None,
 
             // Initialize Vim mode
             vim_mode: VimMode::Normal,
@@ -142,7 +167,41 @@ impl App {
             .map(|f| (f.path, f.status))
             .collect();
 
+        // Invalidate cached graph; it will be lazily rebuilt on draw
+        self.graph_data = None;
+        self.graph_rows.clear();
+        self.graph_top = 0;
+
         Ok(())
+    }
+
+    /// Build or rebuild advanced graph cache
+    pub fn rebuild_graph(&mut self) -> Result<()> {
+        let engine = GraphEngine { max_count: 200 };
+        let graph = engine.build(&self.repository)?;
+        let rows = RowEdgesBuilder::build(&graph);
+        self.graph_rows = rows;
+        self.graph_data = Some(graph);
+        // Try to keep selection visible
+        self.ensure_graph_visible();
+        Ok(())
+    }
+
+    /// Ensure selected commit row is within the visible viewport
+    pub fn ensure_graph_visible(&mut self) {
+        if !self.show_graph { return; }
+        let view_h = self.graph_view_height.max(1);
+        let selected_id = self.selected_commit.selected().and_then(|i| self.commits.get(i)).map(|c| c.id.clone());
+        if let (Some(graph), Some(sel)) = (self.graph_data.as_ref(), selected_id.as_ref()) {
+            if let Some((idx, _)) = graph.nodes.iter().enumerate().find(|(_, n)| &n.id == sel) {
+                // Adjust top to keep idx visible
+                if idx < self.graph_top {
+                    self.graph_top = idx;
+                } else if idx >= self.graph_top + view_h {
+                    self.graph_top = idx + 1 - view_h;
+                }
+            }
+        }
     }
 
     pub fn next_tab(&mut self) {
@@ -559,6 +618,25 @@ impl App {
         }
     }
 
+    pub fn graph_page_down(&mut self) {
+        if self.show_graph && self.current_tab == 0 {
+            if !self.graph_rows.is_empty() && self.graph_view_height > 0 {
+                let page = self.graph_view_height.saturating_sub(1);
+                let max_top = self.graph_rows.len().saturating_sub(self.graph_view_height.max(1));
+                self.graph_top = (self.graph_top + page).min(max_top);
+            }
+        }
+    }
+
+    pub fn graph_page_up(&mut self) {
+        if self.show_graph && self.current_tab == 0 {
+            if self.graph_view_height > 0 {
+                let page = self.graph_view_height.saturating_sub(1);
+                self.graph_top = self.graph_top.saturating_sub(page);
+            }
+        }
+    }
+
     pub fn scroll_to_top(&mut self) {
         if self.current_tab == 3 {
             self.scroll_position = 0;
@@ -622,6 +700,26 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> io::Result<
             }
         }
 
+        // Process graph events (debounced)
+        while let Some(ev) = app.event_bus.try_recv() {
+            match ev {
+                GraphEvent::RepositoryChanged | GraphEvent::CommitAdded(_) | GraphEvent::RefUpdated(_) => {
+                    app.debouncer.add(GraphEvent::RepositoryChanged);
+                }
+                _ => {}
+            }
+        }
+        if let Some(_ev) = app.debouncer.take_if_ready() {
+            // Minimal refresh strategy: reload lists and rebuild graph if visible
+            if let Err(e) = app.refresh() {
+                app.message = Some((format!("Auto-refresh failed: {}", e), Instant::now()));
+            } else if app.show_graph {
+                if let Err(e) = app.rebuild_graph() {
+                    app.message = Some((format!("Graph rebuild failed: {}", e), Instant::now()));
+                }
+            }
+        }
+
         if event::poll(Duration::from_millis(100))? {
             if let Event::Key(key) = event::read()? {
                 // Only handle key press events to avoid repeats/releases triggering twice
@@ -660,6 +758,12 @@ fn handle_normal_mode(app: &mut App, key: crossterm::event::KeyEvent) {
     let count = app.count.unwrap_or(1);
 
     match key.code {
+        // Exit graph view with Esc (when on Commits tab)
+        KeyCode::Esc if app.current_tab == 0 && app.show_graph => {
+            app.show_graph = false;
+            app.message = Some(("Graph view: OFF".to_string(), Instant::now()));
+            return;
+        }
         // Vim navigation
         KeyCode::Char('h') | KeyCode::Left => {
             if app.current_tab > 0 {
@@ -679,6 +783,7 @@ fn handle_normal_mode(app: &mut App, key: crossterm::event::KeyEvent) {
                     app.next_item();
                 }
             }
+            if app.current_tab == 0 && app.show_graph { app.ensure_graph_visible(); }
         }
         KeyCode::Char('k') | KeyCode::Up => {
             for _ in 0..count {
@@ -688,11 +793,18 @@ fn handle_normal_mode(app: &mut App, key: crossterm::event::KeyEvent) {
                     app.previous_item();
                 }
             }
+            if app.current_tab == 0 && app.show_graph { app.ensure_graph_visible(); }
         }
 
         // Toggle graph visualization
         KeyCode::Char('v') if app.current_tab == 0 => {
             app.show_graph = !app.show_graph;
+            if app.show_graph {
+                if let Err(e) = app.rebuild_graph() {
+                    app.message = Some((format!("Graph build failed: {}", e), Instant::now()));
+                    app.show_graph = false;
+                }
+            }
             app.message = Some((
                 format!("Graph view: {}", if app.show_graph { "ON" } else { "OFF" }),
                 Instant::now()
@@ -709,6 +821,7 @@ fn handle_normal_mode(app: &mut App, key: crossterm::event::KeyEvent) {
                 3 => app.scroll_to_top(),
                 _ => {}
             }
+            if app.current_tab == 0 && app.show_graph { app.ensure_graph_visible(); }
         }
         KeyCode::Char('G') => {
             // G - go to bottom or line N
@@ -728,6 +841,7 @@ fn handle_normal_mode(app: &mut App, key: crossterm::event::KeyEvent) {
                     _ => {}
                 }
             }
+            if app.current_tab == 0 && app.show_graph { app.ensure_graph_visible(); }
         }
 
         // Tab navigation with numbers
@@ -873,6 +987,44 @@ fn handle_normal_mode(app: &mut App, key: crossterm::event::KeyEvent) {
             if let Err(e) = app.refresh() {
                 app.message = Some((format!("Refresh failed: {}", e), Instant::now()));
             }
+            if app.show_graph {
+                if let Err(e) = app.rebuild_graph() {
+                    app.message = Some((format!("Graph rebuild failed: {}", e), Instant::now()));
+                }
+            }
+        }
+        // Toggle ASCII rendering for graph
+        KeyCode::Char('a') if app.current_tab == 0 && app.show_graph => {
+            app.graph_ascii = !app.graph_ascii;
+            app.message = Some((format!("Graph ASCII: {}", if app.graph_ascii { "ON" } else { "OFF" }), Instant::now()));
+        }
+        // Toggle watcher (if built with feature)
+        KeyCode::Char('w') if app.current_tab == 0 => {
+            #[cfg(feature = "watch")]
+            {
+                use std::path::Path;
+                if !app.graph_watch_enabled {
+                    // start watcher
+                    let sender = app.event_bus.sender();
+                    let mut watcher = GitWatcher::new(Path::new("."), sender).ok();
+                    if let Some(w) = watcher.as_mut() { let _ = w.watch(); }
+                    app.graph_watcher = watcher;
+                    app.graph_watch_enabled = app.graph_watcher.is_some();
+                } else {
+                    if let Some(w) = app.graph_watcher.as_mut() { let _ = w.unwatch(); }
+                    app.graph_watcher = None;
+                    app.graph_watch_enabled = false;
+                }
+            }
+            #[cfg(not(feature = "watch"))]
+            {
+                app.message = Some(("Watcher not built (enable feature 'watch')".to_string(), Instant::now()));
+            }
+            if app.graph_watch_enabled {
+                app.message = Some(("Graph watch: ON".to_string(), Instant::now()));
+            } else {
+                app.message = Some(("Graph watch: OFF".to_string(), Instant::now()));
+            }
         }
         KeyCode::Char('q') => app.should_quit = true,
         KeyCode::Esc => {
@@ -905,16 +1057,20 @@ fn handle_normal_mode(app: &mut App, key: crossterm::event::KeyEvent) {
 
         // Page navigation
         KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-            app.scroll_down(10);
+            if app.current_tab == 3 { app.scroll_down(10); }
+            else if app.current_tab == 0 && app.show_graph { app.graph_page_down(); }
         }
         KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-            app.scroll_up(10);
+            if app.current_tab == 3 { app.scroll_up(10); }
+            else if app.current_tab == 0 && app.show_graph { app.graph_page_up(); }
         }
         KeyCode::Char('f') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-            app.scroll_down(20);
+            if app.current_tab == 3 { app.scroll_down(20); }
+            else if app.current_tab == 0 && app.show_graph { app.graph_page_down(); }
         }
         KeyCode::Char('b') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-            app.scroll_up(20);
+            if app.current_tab == 3 { app.scroll_up(20); }
+            else if app.current_tab == 0 && app.show_graph { app.graph_page_up(); }
         }
 
         _ => {}
@@ -1145,14 +1301,28 @@ fn ui(f: &mut Frame, app: &App) {
 }
 
 fn draw_commits_tab(f: &mut Frame, app: &App, area: Rect) {
+    // Update viewport height for graph ensure_visible logic
+    let app_ptr: *const App = app as *const _; // workaround immut borrow; safe due to single-threaded draw
+    unsafe { (*(app_ptr as *mut App)).graph_view_height = area.height as usize; }
     if app.show_graph {
-        // Use graph visualization
-        let widget = SimpleGraphWidget::new(
-            &app.simple_graph,
-            &app.commits,
-            &app.branches,
-        ).selected(app.selected_commit.selected());
-        f.render_widget(widget, area);
+        // Advanced graph visualization (experimental)
+        if app.graph_data.is_none() {
+            // try rebuild lazily
+            let _ = unsafe { (*(app_ptr as *mut App)).rebuild_graph() };
+        }
+        if let Some(graph) = &app.graph_data {
+            let rows = &app.graph_rows;
+            let top = app.graph_top;
+            let widget = AdvancedGraphWidget::new(graph, rows)
+                .ascii(app.graph_ascii)
+                .top(top);
+            f.render_widget(widget, area);
+        } else {
+            // Fallback to simple graph on failure
+            let widget = SimpleGraphWidget::new(&app.simple_graph, &app.commits, &app.branches)
+                .selected(app.selected_commit.selected());
+            f.render_widget(widget, area);
+        }
     } else {
         // Use traditional list view
         let commits: Vec<ListItem> = app
