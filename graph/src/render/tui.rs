@@ -1,5 +1,4 @@
-use crate::layout::{Row, Lane, LaneIdx};
-use std::fmt;
+use crate::layout::{Row, Lane};
 
 /// Box drawing characters for graph rendering
 pub mod chars {
