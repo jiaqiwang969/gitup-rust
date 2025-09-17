@@ -22,6 +22,11 @@ fn calculate_direction_masks(lane: &Lane, row: &crate::layout::Row, col: usize) 
             // Vertical pass-through
             incoming |= DIR_N;
             outgoing |= DIR_S;
+            // Check for horizontal connections at event rows
+            if should_add_horizontal_connections(row, col) {
+                incoming |= DIR_W;
+                outgoing |= DIR_E;
+            }
         }
         Lane::Commit => {
             // Commit node - check for incoming from above
@@ -30,30 +35,53 @@ fn calculate_direction_masks(lane: &Lane, row: &crate::layout::Row, col: usize) 
             if has_continuation_below(row, col) {
                 outgoing |= DIR_S;
             }
+            // Add horizontal connections for merge/split scenarios
+            if row.commit.is_merge() {
+                // Merge commit - add horizontal incoming from child lanes
+                for parent_lane in get_parent_lanes(row, col) {
+                    if parent_lane < col {
+                        incoming |= DIR_W;
+                    } else if parent_lane > col {
+                        incoming |= DIR_E;
+                    }
+                }
+            }
+            if has_child_branches(row, col) {
+                // Split commit - add horizontal outgoing to child lanes
+                outgoing |= DIR_E | DIR_W;
+            }
         }
         Lane::BranchStart => {
             // Branch starting - diagonal connections
             incoming |= DIR_N;
             outgoing |= DIR_S | DIR_SE;
+            // Add horizontal connection for tee
+            incoming |= DIR_W;
         }
         Lane::Merge(sources) => {
             // Multiple incoming lanes
             incoming |= DIR_N;
             for &src in sources {
                 if src < col {
-                    incoming |= DIR_NW;
+                    incoming |= DIR_NW | DIR_W; // Add horizontal component
                 } else if src > col {
-                    incoming |= DIR_NE;
+                    incoming |= DIR_NE | DIR_E; // Add horizontal component
                 }
             }
             outgoing |= DIR_S;
+            // Add horizontal outgoing for tee connections
+            outgoing |= DIR_E | DIR_W;
         }
         Lane::End => {
             // Ending lane
             incoming |= DIR_N;
         }
         Lane::Empty => {
-            // No connections
+            // Check if this empty lane should have horizontal pass-through
+            if should_add_horizontal_passthrough(row, col) {
+                incoming |= DIR_W;
+                outgoing |= DIR_E;
+            }
         }
     }
 
@@ -65,6 +93,51 @@ fn has_continuation_below(row: &crate::layout::Row, col: usize) -> bool {
     // In a real implementation, we'd check the next row
     // For now, assume most lanes continue except End
     !matches!(row.lanes.get(col), Some(Lane::End) | None)
+}
+
+/// Check if we should add horizontal connections at event rows
+fn should_add_horizontal_connections(row: &crate::layout::Row, col: usize) -> bool {
+    // Add horizontal connections at merge/split points
+    row.commit.is_merge() || has_child_branches(row, col) || has_adjacent_events(row, col)
+}
+
+/// Get parent lanes for merge scenarios
+fn get_parent_lanes(row: &crate::layout::Row, col: usize) -> Vec<usize> {
+    if let Some(Lane::Merge(sources)) = row.lanes.get(col) {
+        sources.clone()
+    } else if row.commit.is_merge() {
+        // Return lanes based on parent commits
+        (0..row.lanes.len()).filter(|&i| i != col && !matches!(row.lanes[i], Lane::Empty)).collect()
+    } else {
+        vec![]
+    }
+}
+
+/// Check if this commit has child branches
+fn has_child_branches(row: &crate::layout::Row, col: usize) -> bool {
+    // Simplified: check if there are multiple non-empty lanes (indicating branching)
+    row.lanes.iter().filter(|&lane| !matches!(lane, Lane::Empty)).count() > 1
+}
+
+/// Check if adjacent lanes have events that require horizontal connections
+fn has_adjacent_events(row: &crate::layout::Row, col: usize) -> bool {
+    // Check left and right neighbors for events
+    let left_has_event = col > 0 && matches!(row.lanes.get(col - 1), Some(Lane::Commit) | Some(Lane::Merge(_)) | Some(Lane::BranchStart));
+    let right_has_event = matches!(row.lanes.get(col + 1), Some(Lane::Commit) | Some(Lane::Merge(_)) | Some(Lane::BranchStart));
+    left_has_event || right_has_event
+}
+
+/// Check if empty lane should have horizontal pass-through
+fn should_add_horizontal_passthrough(row: &crate::layout::Row, col: usize) -> bool {
+    // Add horizontal pass-through if this lane is between active lanes with events
+    if col == 0 || col >= row.lanes.len() - 1 {
+        return false;
+    }
+
+    let left_active = (0..col).any(|i| !matches!(row.lanes[i], Lane::Empty));
+    let right_active = (col + 1..row.lanes.len()).any(|i| !matches!(row.lanes[i], Lane::Empty));
+
+    left_active && right_active
 }
 
 /// Select appropriate glyph based on direction masks
@@ -81,7 +154,7 @@ fn select_glyph_from_dirs(incoming: u8, outgoing: u8, _prefer_straight: bool) ->
     let in_count = incoming.count_ones();
     let out_count = outgoing.count_ones();
 
-    // Junction detection
+    // Junction detection - enhanced for horizontal tees
     if in_count > 1 && out_count > 1 {
         return '┼'; // Cross junction
     }
@@ -93,6 +166,10 @@ fn select_glyph_from_dirs(incoming: u8, outgoing: u8, _prefer_straight: bool) ->
         if incoming & DIR_W != 0 && incoming & DIR_E != 0 {
             return '┤'; // Side merge
         }
+        // Horizontal tee with vertical (merge at child row)
+        if incoming & (DIR_W | DIR_E) != 0 && incoming & DIR_N != 0 {
+            return '┤'; // Right tee for merge
+        }
     }
     if out_count > 1 {
         // Multiple outgoing - branch points
@@ -101,6 +178,27 @@ fn select_glyph_from_dirs(incoming: u8, outgoing: u8, _prefer_straight: bool) ->
         }
         if outgoing & DIR_W != 0 && outgoing & DIR_E != 0 {
             return '├'; // Side branch
+        }
+        // Horizontal tee with vertical (split at parent row)
+        if outgoing & (DIR_W | DIR_E) != 0 && outgoing & DIR_S != 0 {
+            return '├'; // Left tee for split
+        }
+    }
+
+    // T-junctions (enhanced for horizontal connections)
+    if in_count == 1 && out_count == 1 {
+        // Check for horizontal tee patterns
+        if incoming & DIR_W != 0 && outgoing & DIR_S != 0 {
+            return '┐'; // Top-right corner
+        }
+        if incoming & DIR_E != 0 && outgoing & DIR_S != 0 {
+            return '┌'; // Top-left corner
+        }
+        if incoming & DIR_N != 0 && outgoing & DIR_W != 0 {
+            return '┘'; // Bottom-right corner
+        }
+        if incoming & DIR_N != 0 && outgoing & DIR_E != 0 {
+            return '└'; // Bottom-left corner
         }
     }
 
@@ -248,9 +346,9 @@ impl ViewportCarryOver {
                 // Select proper glyph based on direction masks
                 let glyph = select_glyph_from_dirs(state.incoming, state.outgoing, true);
 
-                // Apply the glyph if position is valid and empty
+                // Apply the glyph - always merge (never overwrite directly)
                 if pos < cells.len() {
-                    // Merge with existing glyph if needed (Z-merge)
+                    // Always merge with existing glyph to preserve background lines
                     let ch = if cells[pos].ch == ' ' { glyph } else { resolver.merge_chars(cells[pos].ch, glyph) };
                     cells[pos] = crate::render::Cell::new(ch, color);
                 }

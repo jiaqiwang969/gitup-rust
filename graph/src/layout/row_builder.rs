@@ -34,6 +34,21 @@ pub enum Lane {
     End,
 }
 
+impl Lane {
+    /// Get merge targets if this is a merge lane
+    pub fn get_merge_targets(&self) -> &[LaneIdx] {
+        match self {
+            Lane::Merge(targets) => targets,
+            _ => &[],
+        }
+    }
+
+    /// Check if this lane represents an event (commit, merge, branch start/end)
+    pub fn is_event(&self) -> bool {
+        matches!(self, Lane::Commit | Lane::Merge(_) | Lane::BranchStart | Lane::End)
+    }
+}
+
 /// Builds rows from a DAG
 pub struct RowBuilder {
     /// Maximum number of lanes to use

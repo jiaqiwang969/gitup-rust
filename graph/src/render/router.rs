@@ -121,11 +121,12 @@ impl CellRouter {
             }
 
             CharsetProfile::Utf8Straight => {
-                // Straight lines
+                // Straight lines (keep highest priority for basic patterns)
                 self.insert(EntryDir::North, ExitDir::South, '│', 10, Some('|'));
                 self.insert(EntryDir::East, ExitDir::West, '─', 10, Some('-'));
+                self.insert(EntryDir::West, ExitDir::East, '─', 10, Some('-'));
 
-                // Sharp corners
+                // Sharp corners (lower priority than straight lines)
                 self.insert(EntryDir::North, ExitDir::East, '└', 8, Some('\\'));
                 self.insert(EntryDir::North, ExitDir::West, '┘', 8, Some('/'));
                 self.insert(EntryDir::South, ExitDir::East, '┌', 8, Some('/'));
@@ -135,25 +136,25 @@ impl CellRouter {
                 self.insert(EntryDir::North, ExitDir::None, '╵', 9, Some('|'));
                 self.insert(EntryDir::South, ExitDir::None, '╷', 9, Some('|'));
 
-                // Merge patterns
+                // Merge patterns (highest priority for merge scenarios)
                 self.insert(EntryDir::NorthWest, ExitDir::South, '┤', 12, Some('|'));
                 self.insert(EntryDir::NorthEast, ExitDir::South, '├', 12, Some('|'));
-
-                // Cross
-                self.insert(EntryDir::North, ExitDir::South, '│', 10, Some('|'));
-                self.insert(EntryDir::East, ExitDir::West, '─', 10, Some('-'));
-                self.insert_cross('┼', 11, Some('+'));
             }
 
             CharsetProfile::Ascii => {
-                // ASCII only
+                // ASCII only - keep basic patterns with high priority
                 self.insert(EntryDir::North, ExitDir::South, '|', 10, None);
                 self.insert(EntryDir::East, ExitDir::West, '-', 10, None);
+                self.insert(EntryDir::West, ExitDir::East, '-', 10, None);
                 self.insert(EntryDir::North, ExitDir::East, '\\', 8, None);
                 self.insert(EntryDir::North, ExitDir::West, '/', 8, None);
                 self.insert(EntryDir::South, ExitDir::East, '/', 8, None);
                 self.insert(EntryDir::South, ExitDir::West, '\\', 8, None);
-                self.insert_cross('+', 11, None);
+                // Only add cross for specific complex junctions (lower priority than basic lines)
+                self.insert(EntryDir::East, ExitDir::North, '+', 7, None);
+                self.insert(EntryDir::East, ExitDir::South, '+', 7, None);
+                self.insert(EntryDir::West, ExitDir::North, '+', 7, None);
+                self.insert(EntryDir::West, ExitDir::South, '+', 7, None);
             }
         }
     }

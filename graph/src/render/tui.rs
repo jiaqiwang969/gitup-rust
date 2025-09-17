@@ -153,7 +153,14 @@ impl TuiRenderer {
                     } else {
                         chars::COMMIT_EMPTY
                     };
-                    self.put_char(&mut cells, pos, ch, color);
+                    // For commit nodes, overlay on top of existing character (preserve background lines)
+                    if cells[pos].ch != chars::SPACE {
+                        // Merge commit node with existing background glyph
+                        let merged = self.resolver.merge_chars(cells[pos].ch, ch);
+                        self.put_char(&mut cells, pos, merged, color);
+                    } else {
+                        self.put_char(&mut cells, pos, ch, color);
+                    }
                     self.put_char(&mut cells, pos + 1, chars::SPACE, color);
                 }
                 Lane::BranchStart => {
@@ -161,16 +168,50 @@ impl TuiRenderer {
                     self.put_char(&mut cells, pos + 1, chars::HORIZONTAL, color);
                 }
                 Lane::Merge(targets) => {
-                    // Simple merge rendering
-                    self.put_char(&mut cells, pos, chars::MERGE_LEFT, color);
+                    // Enhanced merge rendering with proper tee connections
+                    // Draw the merge point with proper character selection
+                    let merge_char = if targets.iter().any(|&t| t < lane_idx) && targets.iter().any(|&t| t > lane_idx) {
+                        chars::CROSS  // Cross if merging from both sides
+                    } else if targets.iter().any(|&t| t < lane_idx) {
+                        chars::MERGE_LEFT  // Left tee (┤) for merges from left
+                    } else {
+                        chars::MERGE_RIGHT // Right tee (├) for merges from right
+                    };
+
+                    // For merge nodes, overlay on existing character to preserve background
+                    if cells[pos].ch != chars::SPACE {
+                        let merged = self.resolver.merge_chars(cells[pos].ch, merge_char);
+                        self.put_char(&mut cells, pos, merged, color);
+                    } else {
+                        self.put_char(&mut cells, pos, merge_char, color);
+                    }
+
+                    // Draw horizontal line to the right
                     self.put_char(&mut cells, pos + 1, chars::HORIZONTAL, color);
 
-                    // Draw lines to merge targets
+                    // Draw lines to merge targets (ensuring they connect properly)
                     for &target in targets {
                         if target < self.graph_width && target != lane_idx {
                             let target_pos = target * 2;
                             let tcolor = self.lane_colors[target % self.lane_colors.len()];
-                            self.put_char(&mut cells, target_pos, chars::VERTICAL, tcolor);
+
+                            // Ensure target lanes show proper connection
+                            if cells[target_pos].ch == chars::SPACE {
+                                self.put_char(&mut cells, target_pos, chars::VERTICAL, tcolor);
+                            } else {
+                                // Merge with existing glyph
+                                let merged = self.resolver.merge_chars(cells[target_pos].ch, chars::VERTICAL);
+                                self.put_char(&mut cells, target_pos, merged, tcolor);
+                            }
+
+                            // Draw horizontal connection lines between merge point and targets
+                            let start_x = std::cmp::min(lane_idx * 2, target_pos);
+                            let end_x = std::cmp::max(lane_idx * 2, target_pos);
+                            for x in ((start_x + 2)..(end_x)).step_by(2) {
+                                if x + 1 < cells.len() {
+                                    self.put_char(&mut cells, x + 1, chars::HORIZONTAL, color);
+                                }
+                            }
                         }
                     }
                 }

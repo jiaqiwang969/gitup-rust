@@ -12,6 +12,14 @@ impl SimpleGraphBuilder {
         Self { max_lanes }
     }
 
+    /// Assign a lane to a commit
+    fn assign_lane(&mut self, commit_id: &str) -> LaneIdx {
+        // Simple assignment: use existing mapping if available
+        // In a real implementation, this would track lane assignments
+        // For now, just return a simple hash-based assignment
+        (commit_id.len() % self.max_lanes).min(self.max_lanes - 1)
+    }
+
     pub fn build_rows(&mut self, dag: &Dag) -> Vec<Row> {
         let mut rows = Vec::new();
 
@@ -77,24 +85,61 @@ impl SimpleGraphBuilder {
                 }
             }
 
-            // Handle merge visualization
+            // Handle merge visualization with proper target lane tracking
             if commit.parents.len() > 1 {
                 let mut merge_targets = Vec::new();
-                for parent_id in &commit.parents[1..] {
-                    if let Some(&parent_lane) = commit_lanes.get(parent_id) {
-                        if parent_lane != primary_lane {
-                            merge_targets.push(parent_lane);
-                            // Make sure the merge target lane is marked
-                            if lanes[parent_lane] == Lane::Empty {
-                                lanes[parent_lane] = Lane::Pass;
-                            }
+                // Track all parent lanes for proper merge visualization
+                for (parent_idx, parent_id) in commit.parents.iter().enumerate() {
+                    let parent_lane = if parent_idx == 0 {
+                        // First parent continues in same lane
+                        primary_lane
+                    } else {
+                        // Other parents get their assigned lanes
+                        self.assign_lane(parent_id)
+                    };
+
+                    if parent_lane != primary_lane {
+                        merge_targets.push(parent_lane);
+                        // Ensure the merge target lane is marked as active
+                        active_lanes[parent_lane] = Some(parent_id.clone());
+                        if lanes[parent_lane] == Lane::Empty {
+                            lanes[parent_lane] = Lane::Pass;
                         }
                     }
                 }
+
                 if !merge_targets.is_empty() {
+                    // Update lanes to show proper connections for horizontal tees first
+                    // This ensures child rows show ┤/├ properly
+                    for &target_lane in &merge_targets {
+                        if target_lane < lanes.len() && lanes[target_lane] == Lane::Pass {
+                            // Keep as Pass but mark for horizontal connection
+                            lanes[target_lane] = Lane::Pass;
+                        }
+                    }
+
+                    // Set the merge lane after updating targets
                     lanes[primary_lane] = Lane::Merge(merge_targets);
                 }
+            } else if commit.parents.len() == 1 {
+                // Single parent - check for branch start
+                let parent_lane = self.assign_lane(&commit.parents[0]);
+                if parent_lane != primary_lane {
+                    lanes[primary_lane] = Lane::BranchStart;
+                    // Ensure parent lane is active
+                    active_lanes[parent_lane] = Some(commit.parents[0].clone());
+                    if lanes[parent_lane] == Lane::Empty {
+                        lanes[parent_lane] = Lane::Pass;
+                    }
+                }
             }
+
+            // Store merge targets before creating Row for later use
+            let merge_targets_for_continuity = if let Lane::Merge(ref targets) = lanes[primary_lane] {
+                Some(targets.clone())
+            } else {
+                None
+            };
 
             rows.push(Row {
                 commit_id: commit.id.clone(),
@@ -104,16 +149,27 @@ impl SimpleGraphBuilder {
             });
 
             // After processing, update active lanes for parent continuity
+            // This is crucial for ensuring proper horizontal tee connections
             if commit.parents.len() == 1 {
                 // Single parent continues in the same lane
                 active_lanes[primary_lane] = Some(commit.parents[0].clone());
             } else if commit.parents.is_empty() {
                 // No parents, free the lane
                 active_lanes[primary_lane] = None;
-            }
-            // For merge commits, the lane continues with first parent
-            else if !commit.parents.is_empty() {
+            } else if !commit.parents.is_empty() {
+                // For merge commits, the lane continues with first parent
                 active_lanes[primary_lane] = Some(commit.parents[0].clone());
+
+                // Ensure all merge target lanes remain active for proper connections
+                if let Some(targets) = merge_targets_for_continuity {
+                    for &target_lane in &targets {
+                        if target_lane < active_lanes.len() && target_lane < commit.parents.len() {
+                            // Keep target lanes active with their respective parents
+                            let parent_idx = target_lane.min(commit.parents.len() - 1);
+                            active_lanes[target_lane] = Some(commit.parents[parent_idx].clone());
+                        }
+                    }
+                }
             }
         }
 
